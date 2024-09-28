@@ -43,7 +43,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
         etl_job = BehaviorVideoJob(job_settings=job_settings)
 
         # Okay, all I need here is an example video
-        # and an example ffmpeg string. 
+        # and an example ffmpeg string.
 
         start_time = time.time()
         response = etl_job.run_job()
