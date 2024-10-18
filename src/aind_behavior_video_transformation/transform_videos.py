@@ -120,8 +120,8 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
             input_args = param_set[0].value
             output_args = param_set[1].value
 
-        print(f'{input_args=}')
-        print(f'{output_args=}')
+        logging.info(f'{input_args=}')
+        logging.info(f'{output_args=}')
 
         ffmpeg_command = ["ffmpeg", "-y", "-v", "info"]
         if input_args:
@@ -132,7 +132,15 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
         ffmpeg_command.append(str(out_path))
 
         # Run command in subprocess
-        subprocess.run(ffmpeg_command, check=True)
+        try:
+            result = subprocess.run(
+                ffmpeg_command,
+                check=True,
+                stderr=subprocess.PIPE,  # Capture stderr
+                text=True  # Get output as string, not bytes
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Error running FFmpeg: {e.stderr}")
 
         return
 
