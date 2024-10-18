@@ -22,7 +22,6 @@ from pydantic import Field
 class CompressionRequest(Enum):
     """Enum class to define different types of compression requests"""
 
-    DEFAULT = "gamma"  # Same as GAMMA_ENCODING
     NO_GAMMA_ENCODING = (
         "no gamma"  # Do not apply gamma encoding and convert to 8 bit output
     )
@@ -76,7 +75,7 @@ class CompressionSettings(BasicJobSettings):
     output_directory from BasicJobSettings."""
 
     compression_requested: CompressionRequest = Field(
-        default=CompressionRequest.DEFAULT,
+        default=CompressionRequest.GAMMA_ENCODING,
         description="Params to pass to ffmpeg command",
     )  # Choose among FfmegParams Enum or provide your own string.
     user_ffmpeg_input_options: Optional[str] = Field(
@@ -98,23 +97,31 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
             Path to the video file to be converted
         """
 
-        outpath = self.job_settings.output_directory / video_path.stem + ".mp4"
+        out_path = self.job_settings.output_directory / f'{video_path.stem}.mp4'
+        # Pydantic validation ensures this is a 'CompressionRequest' value.
         compression_requested = self.job_settings.compression_requested
+
+        # Trivial Case, do nothing
         if compression_requested == CompressionRequest.NO_COMPRESSION:
-            symlink(str(video_path), str(outpath))
+            symlink(str(video_path), str(out_path))
             return
 
-        if compression_requested == CompressionRequest.USER_DEFINED:
-            input_args = self.job_settings.user_ffmpeg_input_options
-            output_args = self.job_settings.user_ffmpeg_output_options
-        else:
-            if compression_requested == CompressionRequest.DEFAULT:
-                compression_preset = CompressionRequest.GAMMA_ENCODING
-            else:
-                compression_preset = compression_requested
-            param_set = FfmpegParamSets[compression_preset.name].value
+        # Compression Cases corresponding to each CompressionRequest.
+        # Each case sets input/output args to pass into ffmpeg command.
+        if compression_requested == CompressionRequest.GAMMA_ENCODING:
+            param_set = FfmpegParamSets[compression_requested.name].value
             input_args = param_set[0].value
             output_args = param_set[1].value
+        elif compression_requested == CompressionRequest.USER_DEFINED:
+            input_args = self.job_settings.user_ffmpeg_input_options
+            output_args = self.job_settings.user_ffmpeg_output_options
+        else:  # Custom Preset, such as NO_GAMMA_ENCODING
+            param_set = FfmpegParamSets[compression_requested.name].value
+            input_args = param_set[0].value
+            output_args = param_set[1].value
+
+        print(f'{input_args=}')
+        print(f'{output_args=}')
 
         ffmpeg_command = ["ffmpeg", "-y", "-v", "info"]
         if input_args:
@@ -122,7 +129,7 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
         ffmpeg_command.extend(["-i", str(video_path)])
         if output_args:
             ffmpeg_command.extend(shlex.split(output_args))
-        ffmpeg_command.append(str(outpath))
+        ffmpeg_command.append(str(out_path))
 
         # Run command in subprocess
         subprocess.run(ffmpeg_command, check=True)
@@ -141,9 +148,9 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
         job_start_time = time()
         input_dir = self.job_settings.input_source
         video_files = [
-            input_dir / f
-            for f in next(input_dir.walk())[2]
-            if f.endswith((".mp4", ".avi", ".mov", ".mkv"))
+            f
+            for f in input_dir.iterdir()
+            if f.suffix in (".mp4", ".avi", ".mov", ".mkv")
         ]
         for video_file in video_files:
             self.convert_video(video_file)
@@ -171,9 +178,13 @@ if __name__ == "__main__":
     else:
         # Construct settings from env vars
         job_settings = CompressionSettings(
-            input_source=Path("some_path"),
-            output_directory=Path("some_other_path"),
+            input_source=Path("tests/test_video_in_dir"),
+            output_directory=Path("tests/test_video_out_dir"),
+            compression_requested=CompressionRequest.NO_GAMMA_ENCODING
         )
+
     job = BehaviorVideoJob(job_settings=job_settings)
     job_response = job.run_job()
+    print(job_response.status_code)
+
     logging.info(job_response.model_dump_json())
