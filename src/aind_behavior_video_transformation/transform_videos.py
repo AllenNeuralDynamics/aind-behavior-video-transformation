@@ -5,10 +5,10 @@ import shlex
 import subprocess
 import sys
 from enum import Enum
+from os import symlink
 from pathlib import Path
 from time import time
 from typing import Optional
-from os import symlink
 
 from aind_data_transformation.core import (
     BasicJobSettings,
@@ -20,7 +20,9 @@ from pydantic import Field
 
 
 class CompressionRequest(Enum):
-    """Enum class to define different types of compression requests"""
+    """
+    Enum class to define different types of compression requests
+    """
 
     NO_GAMMA_ENCODING = (
         "no gamma"  # Do not apply gamma encoding and convert to 8 bit output
@@ -33,10 +35,18 @@ class CompressionRequest(Enum):
 
 
 class InputFfmpegParams(Enum):
+    """
+    Input parameter set referenced inside FfmpegParamSets
+    """
+
     NONE = ""
 
 
 class OutputFfmpegParams(Enum):
+    """
+    Output parameter set referenced inside FfmpegParamSets
+    """
+
     GAMMA_ENCODING = (
         "-vf "
         '"scale=out_color_matrix=bt709:out_range=full:sws_dither=none,'
@@ -57,18 +67,29 @@ class OutputFfmpegParams(Enum):
     )
     NONE = ""
 
+
 class FfmpegParamSets(Enum):
-    # Define different ffmpeg params to be used for video compression
-    # Two-tuple with first element as input params and second element as output
-    # params.
-    #
-    # Default takes 10 bit input and converts to 8 bit output after doing gamma
-    # correction.
-    #
-    # Assumes input has linear transfer characteristic, and pixel format
-    # yuv420p10le. Output is yuv420p standard range
-    GAMMA_ENCODING = (InputFfmpegParams.NONE, OutputFfmpegParams.GAMMA_ENCODING)
-    NO_GAMMA_ENCODING = (InputFfmpegParams.NONE, OutputFfmpegParams.NO_GAMMA_ENCODING)
+    """
+    Define different ffmpeg params to be used for video compression
+    Two-tuple with first element as input params and second element as output
+    params.
+
+    Default takes 10 bit input and converts to 8 bit output after doing gamma
+    correction.
+
+    Assumes input has linear transfer characteristic, and pixel format
+    yuv420p10le. Output is yuv420p standard range
+    """
+
+    GAMMA_ENCODING = (
+        InputFfmpegParams.NONE,
+        OutputFfmpegParams.GAMMA_ENCODING,
+    )
+    NO_GAMMA_ENCODING = (
+        InputFfmpegParams.NONE,
+        OutputFfmpegParams.NO_GAMMA_ENCODING,
+    )
+
 
 class CompressionSettings(BasicJobSettings):
     """BehaviorJob settings. Inherits both fields input_source and
@@ -85,6 +106,7 @@ class CompressionSettings(BasicJobSettings):
         default=None, description="User defined ffmpeg output options"
     )
 
+
 class BehaviorVideoJob(GenericEtl[CompressionSettings]):
     """Main class to handle behavior video transformations"""
 
@@ -97,7 +119,9 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
             Path to the video file to be converted
         """
 
-        out_path = self.job_settings.output_directory / f'{video_path.stem}.mp4'
+        out_path = (
+            self.job_settings.output_directory / f"{video_path.stem}.mp4"
+        )  # noqa: E501
         # Pydantic validation ensures this is a 'CompressionRequest' value.
         compression_requested = self.job_settings.compression_requested
 
@@ -120,8 +144,8 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
             input_args = param_set[0].value
             output_args = param_set[1].value
 
-        logging.info(f'{input_args=}')
-        logging.info(f'{output_args=}')
+        logging.info(f"{input_args=}")
+        logging.info(f"{output_args=}")
 
         ffmpeg_command = ["ffmpeg", "-y", "-v", "info"]
         if input_args:
@@ -133,11 +157,11 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
 
         # Run command in subprocess
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: F841
                 ffmpeg_command,
                 check=True,
                 stderr=subprocess.PIPE,  # Capture stderr
-                text=True  # Get output as string, not bytes
+                text=True,  # Get output as string, not bytes
             )
         except subprocess.CalledProcessError as e:
             print(f"Error running FFmpeg: {e.stderr}")
@@ -188,7 +212,7 @@ if __name__ == "__main__":
         job_settings = CompressionSettings(
             input_source=Path("tests/test_video_in_dir"),
             output_directory=Path("tests/test_video_out_dir"),
-            compression_requested=CompressionRequest.NO_GAMMA_ENCODING
+            compression_requested=CompressionRequest.NO_GAMMA_ENCODING,
         )
 
     job = BehaviorVideoJob(job_settings=job_settings)

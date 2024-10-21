@@ -9,8 +9,8 @@ from aind_data_transformation.core import JobResponse
 
 from aind_behavior_video_transformation.transform_videos import (
     BehaviorVideoJob,
+    CompressionRequest,
     CompressionSettings,
-    CompressionRequest
 )
 
 
@@ -32,18 +32,22 @@ class TestJobSettings(unittest.TestCase):
 class TestBehaviorVideoJob(unittest.TestCase):
     """Test methods in BehaviorVideoJob class."""
 
+    # NOTE:
+    # Test suite does not run yet.
+    # Resolving lint errors first.
+
     @patch("aind_behavior_video_transformation.transform_videos.time")
     def test_run_job(self, mock_time: MagicMock):
         """Tests run_job method."""
 
-        INPUT_SOURCE = Path("some_path")
-        OUTPUT_DIR = Path("some_other_path")
+        INPUT_SOURCE = Path("tests/test_video_in_dir")
+        OUTPUT_DIR = Path("tests/test_video_out_dir")
 
         # Test 1: No Compression
         job_settings = CompressionSettings(
             input_source=INPUT_SOURCE,
             output_directory=OUTPUT_DIR,
-            compression_requested=CompressionRequest.NO_COMPRESSION
+            compression_requested=CompressionRequest.NO_COMPRESSION,
         )
         etl_job = BehaviorVideoJob(job_settings=job_settings)
         start_time = time.time()
@@ -78,7 +82,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
             output_directory=OUTPUT_DIR,
             compression_requested=CompressionRequest.USER_DEFINED,
             user_ffmpeg_input_options="",
-            user_ffmpeg_output_options=""
+            user_ffmpeg_output_options="",
         )
         etl_job = BehaviorVideoJob(job_settings=job_settings)
         start_time = time.time()
@@ -107,6 +111,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
             data=None,
         )
         self.assertEqual(expected_response, response)
+
 
 if __name__ == "__main__":
     unittest.main()
