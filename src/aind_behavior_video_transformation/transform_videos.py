@@ -25,7 +25,7 @@ class CompressionRequest(Enum):
     Details of requests found in FfmpegParamSets.
     """
 
-    DEFAULT = 'gamma'
+    DEFAULT = "gamma"
     GAMMA_ENCODING = "gamma"
     NO_GAMMA_ENCODING = "no gamma"
     USER_DEFINED = "user defined"
@@ -77,10 +77,6 @@ class FfmpegParamSets(Enum):
     yuv420p10le. Output is yuv420p standard range
     """
 
-    DEFAULT = (
-        InputFfmpegParams.NONE,
-        OutputFfmpegParams.GAMMA_ENCODING,
-    )
     GAMMA_ENCODING = (
         InputFfmpegParams.NONE,
         OutputFfmpegParams.GAMMA_ENCODING,
@@ -132,15 +128,18 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
 
         # Compression Cases corresponding to each CompressionRequest.
         # Each case sets input/output args to pass into ffmpeg command.
-        if compression_requested == CompressionRequest.DEFAULT:
-            param_set = FfmpegParamSets[compression_requested.name].value
-            input_args = param_set[0].value
-            output_args = param_set[1].value
-        elif compression_requested == CompressionRequest.USER_DEFINED:
+        # If user defined, use the user defined options.
+        if compression_requested == CompressionRequest.USER_DEFINED:
             input_args = self.job_settings.user_ffmpeg_input_options
             output_args = self.job_settings.user_ffmpeg_output_options
-        else:  # Custom Preset, such as NO_GAMMA_ENCODING
-            param_set = FfmpegParamSets[compression_requested.name].value
+        # In all other cases, the options are defined in FfmpegParamSets.
+        else:
+            # If default, set compression to gamma
+            if compression_requested == CompressionRequest.DEFAULT:
+                compression_preset = CompressionRequest.GAMMA_ENCODING
+            else:
+                compression_preset = compression_requested
+            param_set = FfmpegParamSets[compression_preset.name].value
             input_args = param_set[0].value
             output_args = param_set[1].value
 
