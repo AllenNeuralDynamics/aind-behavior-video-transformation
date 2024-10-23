@@ -211,7 +211,7 @@ if __name__ == "__main__":
         job_settings = CompressionSettings(
             input_source=Path("tests/test_video_in_dir"),
             output_directory=Path("tests/test_video_out_dir"),
-            compression_requested=CompressionRequest.NO_GAMMA_ENCODING,
+            compression_requested=CompressionRequest.DEFAULT,
         )
 
     job = BehaviorVideoJob(job_settings=job_settings)
