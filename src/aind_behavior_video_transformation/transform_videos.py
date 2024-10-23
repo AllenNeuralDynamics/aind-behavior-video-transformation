@@ -59,7 +59,6 @@ class OutputFfmpegParams(Enum):
     NO_GAMMA_ENCODING = (
         "-vf "
         '"scale=out_color_matrix=bt709:out_range=full:sws_dither=none,'
-        "colorspace=ispace=bt709:all=bt709:dither=none,"
         'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
         "-preset veryslow -crf 18 -pix_fmt yuv420p "
         '-metadata author="Allen Institute for Neural Dyamics" '
