@@ -21,17 +21,15 @@ from pydantic import Field
 
 class CompressionRequest(Enum):
     """
-    Enum class to define different types of compression requests
+    Enum class to define different types of compression requests.
+    Details of requests found in FfmpegParamSets.
     """
 
-    NO_GAMMA_ENCODING = (
-        "no gamma"  # Do not apply gamma encoding and convert to 8 bit output
-    )
-    GAMMA_ENCODING = (
-        "gamma"  # Apply gamma encoding and convert to 8 bit output
-    )
-    USER_DEFINED = "user defined"  # User defined ffmpeg params
-    NO_COMPRESSION = "no compression"  # Do not apply any compression
+    DEFAULT = 'gamma'
+    GAMMA_ENCODING = "gamma"
+    NO_GAMMA_ENCODING = "no gamma"
+    USER_DEFINED = "user defined"
+    NO_COMPRESSION = "no compression"
 
 
 class InputFfmpegParams(Enum):
@@ -80,6 +78,10 @@ class FfmpegParamSets(Enum):
     yuv420p10le. Output is yuv420p standard range
     """
 
+    DEFAULT = (
+        InputFfmpegParams.NONE,
+        OutputFfmpegParams.GAMMA_ENCODING,
+    )
     GAMMA_ENCODING = (
         InputFfmpegParams.NONE,
         OutputFfmpegParams.GAMMA_ENCODING,
@@ -95,7 +97,7 @@ class CompressionSettings(BasicJobSettings):
     output_directory from BasicJobSettings."""
 
     compression_requested: CompressionRequest = Field(
-        default=CompressionRequest.GAMMA_ENCODING,
+        default=CompressionRequest.DEFAULT,
         description="Params to pass to ffmpeg command",
     )  # Choose among FfmegParams Enum or provide your own string.
     user_ffmpeg_input_options: Optional[str] = Field(
@@ -131,7 +133,7 @@ class BehaviorVideoJob(GenericEtl[CompressionSettings]):
 
         # Compression Cases corresponding to each CompressionRequest.
         # Each case sets input/output args to pass into ffmpeg command.
-        if compression_requested == CompressionRequest.GAMMA_ENCODING:
+        if compression_requested == CompressionRequest.DEFAULT:
             param_set = FfmpegParamSets[compression_requested.name].value
             input_args = param_set[0].value
             output_args = param_set[1].value
