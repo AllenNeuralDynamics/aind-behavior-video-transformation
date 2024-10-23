@@ -25,7 +25,7 @@ class CompressionRequest(Enum):
     Details of requests found in FfmpegParamSets.
     """
 
-    DEFAULT = "gamma"
+    DEFAULT = "default"
     GAMMA_ENCODING = "gamma"
     NO_GAMMA_ENCODING = "no gamma"
     USER_DEFINED = "user defined"
