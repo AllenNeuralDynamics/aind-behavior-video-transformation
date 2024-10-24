@@ -16,26 +16,16 @@ classifiers = [
 readme = "README.md"
 dynamic = ["version"]
 
-dependencies = [
-    'aind-data-transformation>=0.0.18'
-]
+dependencies = ['aind-data-transformation>=0.0.18']
 
 [project.optional-dependencies]
-dev = [
-    'black',
-    'coverage',
-    'flake8',
-    'interrogate',
-    'isort',
-    'Sphinx',
-    'furo'
-]
+dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort', 'Sphinx', 'furo']
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "aind_behavior_video_transformation.__version__"}
+version = { attr = "aind_behavior_video_transformation.__version__" }
 
 [tool.black]
 line-length = 79
@@ -60,14 +50,14 @@ exclude = '''
 
 [tool.coverage.run]
 omit = ["*__init__*"]
-source = ["aind_behavior_video_transformation", "tests"]
+source = ["aind_behavior_video_transformation"]
 
 [tool.coverage.report]
 exclude_lines = [
     "if __name__ == .__main__.:",
     "from",
     "import",
-    "pragma: no cover"
+    "pragma: no cover",
 ]
 fail_under = 90
 
