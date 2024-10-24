@@ -137,3 +137,12 @@ dmypy.json
 
 # MacOs
 **/.DS_Store
+
+# Videos
+*.mp4
+*.mov
+*.avi
+*.wmv
+*.flv
+*.mkv
+*.webm
