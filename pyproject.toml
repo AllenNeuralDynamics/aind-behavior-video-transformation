@@ -54,10 +54,10 @@ source = ["aind_behavior_video_transformation"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "if __name__ == .__main__.:",
-    "from",
-    "import",
-    "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "from",
+  "import",
+  "pragma: no cover",
 ]
 fail_under = 90
 

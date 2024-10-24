@@ -9,8 +9,9 @@ from aind_data_transformation.core import JobResponse
 
 from aind_behavior_video_transformation.transform_videos import (
     BehaviorVideoJob,
+    BehaviorVideoJobSettings,
+    CompressionEnum,
     CompressionRequest,
-    CompressionSettings,
 )
 
 
@@ -19,7 +20,7 @@ class TestJobSettings(unittest.TestCase):
 
     def test_class_constructor(self):
         """Tests basic class constructor from init args"""
-        job_settings = CompressionSettings(
+        job_settings = BehaviorVideoJobSettings(
             input_source=Path("some_path"),
             output_directory=Path("some_other_path"),
         )
@@ -51,28 +52,34 @@ class TestBehaviorVideoJob(unittest.TestCase):
     def test_run_job(self, mock_time: MagicMock):
         """Tests run_job method."""
         INPUT_SOURCE = Path("tests/test_video_in_dir")
-        for compression_setting in [
-            CompressionRequest.DEFAULT,
-            CompressionRequest.GAMMA_ENCODING,
-            CompressionRequest.NO_GAMMA_ENCODING,
-            CompressionRequest.NO_COMPRESSION,
+        for compression_enum in [
+            CompressionEnum.DEFAULT,
+            CompressionEnum.GAMMA_ENCODING,
+            CompressionEnum.NO_GAMMA_ENCODING,
+            CompressionEnum.NO_COMPRESSION,
         ]:
             with tempfile.TemporaryDirectory() as temp_dir:
-                job_settings = CompressionSettings(
+                job_settings = BehaviorVideoJobSettings(
                     input_source=INPUT_SOURCE,
                     output_directory=temp_dir,
-                    compression_requested=compression_setting,
+                    compression_requested=CompressionRequest(
+                        compression_enum=compression_enum
+                    ),
                 )
                 self.helper_run_compression_job(job_settings, mock_time)
 
         # User Defined
         with tempfile.TemporaryDirectory() as temp_dir:
-            job_settings = CompressionSettings(
+            job_settings = BehaviorVideoJobSettings(
                 input_source=INPUT_SOURCE,
                 output_directory=temp_dir,
-                compression_requested=CompressionRequest.USER_DEFINED,
-                user_ffmpeg_input_options="",
-                user_ffmpeg_output_options="-libx264 -preset veryfast -crf 40",
+                compression_requested=CompressionRequest(
+                    compression_enum=CompressionEnum.USER_DEFINED,
+                    user_ffmpeg_input_options="",
+                    user_ffmpeg_output_options=(
+                        "-c:v libx264 -preset veryfast -crf 40"
+                    ),
+                ),
             )
             self.helper_run_compression_job(job_settings, mock_time)
 
