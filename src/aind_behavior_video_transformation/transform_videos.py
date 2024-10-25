@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 class CompressionEnum(Enum):
     """
     Enum class to define different types of compression requests.
-    Details of requests found in FfmpegParamSets.
+    Details of requests found in FfmpegArgSet.
     """
 
     DEFAULT = "default"
@@ -34,6 +34,23 @@ class CompressionEnum(Enum):
 
 
 class CompressionRequest(BaseModel):
+    """
+    A model representing a request for video compression settings.
+
+    Attributes
+    ----------
+    compression_enum : CompressionEnum
+        Enum specifying the compression type.
+    user_ffmpeg_input_options : Optional[str]
+        User-defined ffmpeg input options.
+    user_ffmpeg_output_options : Optional[str]
+        User-defined ffmpeg output options.
+
+    Methods
+    -------
+    determine_ffmpeg_arg_set() -> Optional[Tuple[str, str]]
+    """
+
     compression_enum: CompressionEnum = Field(
         default=CompressionEnum.DEFAULT,
         description="Params to pass to ffmpeg command",
@@ -47,7 +64,24 @@ class CompressionRequest(BaseModel):
 
     def determine_ffmpeg_arg_set(self) -> Optional[Tuple[str, str]]:
         """
-        Determine ffmpeg arguments from job settings
+        Determines the appropriate set of FFmpeg arguments based on the
+        compression requirements.
+
+        Returns
+        -------
+        Optional[Tuple[str, str]]
+            A tuple containing the FFmpeg input and output options if
+            compression is required, or None if no compression is needed.
+
+        Notes
+        -----
+        - If `compression_enum` is `NO_COMPRESSION`, the method returns None.
+        - If `compression_enum` is `USER_DEFINED`, the method returns
+            user-defined FFmpeg options.
+        - For other compression types, the method uses predefined
+            FFmpeg argument sets.
+        - If `compression_enum` is `DEFAULT`, it defaults to
+            `GAMMA_ENCODING`.
         """
         comp_req = self.compression_enum
         # Handle two special cases
@@ -71,6 +105,17 @@ class CompressionRequest(BaseModel):
 
 
 class VideoCompressionPair(BaseModel):
+    """
+    A class used to represent a pair of video path and compression request.
+
+    Attributes
+    ----------
+    video_path : Union[Path, str]
+        Path to the video file to be compressed.
+    compression_requested : CompressionRequest
+        Compression request details.
+    """
+
     video_path: Union[Path, str] = Field(
         description="Path to the video file to be compressed"
     )
@@ -81,7 +126,7 @@ class VideoCompressionPair(BaseModel):
 
 class FfmpegInputArgs(Enum):
     """
-    Input arguments set referenced inside FfmpegParamSets
+    Input arguments referenced inside FfmpegArgSet
     """
 
     NONE = ""
@@ -89,7 +134,7 @@ class FfmpegInputArgs(Enum):
 
 class FfmpegOutputArgs(Enum):
     """
-    Output arguments set referenced inside FfmpegParamSets
+    Output arguments referenced inside FfmpegArgSet
     """
 
     GAMMA_ENCODING = (
@@ -113,15 +158,9 @@ class FfmpegOutputArgs(Enum):
 
 class FfmpegArgSet(Enum):
     """
-    Define different ffmpeg params to be used for video compression
+    Define different ffmpeg params to be used for video compression.
     Two-tuple with first element as input params and second element as output
     params.
-
-    Default takes 10 bit input and converts to 8 bit output after doing gamma
-    correction.
-
-    Assumes input has linear transfer characteristic, and pixel format
-    yuv420p10le. Output is yuv420p standard range
     """
 
     GAMMA_ENCODING = (
@@ -135,8 +174,10 @@ class FfmpegArgSet(Enum):
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
-    """BehaviorJob settings. Inherits both fields input_source and
-    output_directory from BasicJobSettings."""
+    """
+    BehaviorJob settings. Inherits both fields input_source and
+    output_directory from BasicJobSettings.
+    """
 
     compression_requested: CompressionRequest = Field(
         default=CompressionRequest(),
@@ -156,7 +197,17 @@ class BehaviorVideoJobSettings(BasicJobSettings):
 
 def likely_video_file(file: Path) -> bool:
     """
-    Check if a file is likely a video file
+    Check if a file is likely a video file based on its suffix.
+
+    Parameters
+    ----------
+    file : Path
+        The file path to check.
+
+    Returns
+    -------
+    bool
+        True if the file suffix indicates it is a video file, False otherwise.
     """
     return file.suffix in set(
         [
@@ -173,12 +224,29 @@ def likely_video_file(file: Path) -> bool:
 
 def convert_video(video_path: Path, dst: Path, arg_set) -> Path:
     """
-    Convert video to a different format
+    Converts a video to a specified format using ffmpeg.
 
     Parameters
     ----------
     video_path : Path
-        Path to the video file to be converted
+        The path to the input video file.
+    dst : Path
+        The destination directory where the converted video will be saved.
+    arg_set : tuple or None
+        A tuple containing input and output arguments for ffmpeg. If None, a
+        symlink to the original video is created.
+
+    Returns
+    -------
+    Path
+        The path to the converted video file.
+
+    Notes
+    -----
+    - The function uses ffmpeg for video conversion.
+    - If `arg_set` is None, the function creates a symlink to the original
+        video file.
+    - The function logs the ffmpeg command used for conversion.
     """
 
     out_path = dst / f"{video_path.stem}.mp4"  # noqa: E501
@@ -213,7 +281,27 @@ def transform_directory(
     input_dir: Path, output_dir: Path, arg_set, overrides=dict()
 ) -> None:
     """
-    Transform all videos in a directory
+    Transforms all video files in a directory and its subdirectories,
+    and creates symbolic links for non-video files. Subdirectories are
+    created as needed.
+
+    Parameters
+    ----------
+    input_dir : Path
+        The directory containing the input files.
+    output_dir : Path
+        The directory where the transformed files and symbolic links will be
+        saved.
+    arg_set : Any
+        The set of arguments to be used for video transformation.
+    overrides : dict, optional
+        A dictionary containing overrides for specific directories or files.
+        Keys are Paths and values are argument sets. Default is an empty
+        dictionary.
+
+    Returns
+    -------
+    None
     """
     for root, dirs, files in walk(input_dir, followlinks=True):
         root_path = Path(root)
@@ -237,16 +325,40 @@ def transform_directory(
 
 
 class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
-    """Main class to handle behavior video transformations"""
+    """
+    Main class to handle behavior video transformations.
+
+    This class is responsible for running the compression job on behavior
+    videos.  It processes the input videos based on the provided settings and
+    generates the transformed videos in the specified output directory.
+
+    Attributes
+    ----------
+    job_settings : BehaviorVideoJobSettings
+        Settings specific to the behavior video job, including input source,
+        output directory, and compression requests.
+
+    Methods
+    -------
+    run_job() -> JobResponse
+    """
 
     def run_job(self) -> JobResponse:
         """
-        Main public method to run the compression job
+        Main public method to run the compression job.
+
+        Run the compression job for behavior videos.
+
+        This method processes the input videos based on the provided settings,
+        applies the necessary compression transformations, and saves the output
+        videos to the specified directory. It also handles any specific
+        compression requests for individual videos or directories.
+
         Returns
         -------
         JobResponse
-            Information about the job that can be used for metadata downstream.
-
+            Contains the status code, a message indicating the job duration,
+            and any additional data.
         """
         job_start_time = time()
 
