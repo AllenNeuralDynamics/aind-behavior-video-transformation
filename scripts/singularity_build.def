@@ -7,6 +7,7 @@ Stage: build
     cp -R . ${SINGULARITY_ROOTFS}/aind-behavior-video-transformation
 
 %post
+    apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
     cd ${SINGULARITY_ROOTFS}/aind-behavior-video-transformation
     pip install .[ephys] --no-cache-dir
     rm -rf ${SINGULARITY_ROOTFS}/aind-behavior-video-transformation
