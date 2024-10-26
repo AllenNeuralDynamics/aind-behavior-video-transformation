@@ -1,6 +1,8 @@
 """Tests transform_videos module."""
 
+import tempfile
 import unittest
+from os import symlink
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -8,7 +10,9 @@ from aind_data_transformation.core import JobResponse
 
 from aind_behavior_video_transformation.transform_videos import (
     BehaviorVideoJob,
-    JobSettings,
+    BehaviorVideoJobSettings,
+    CompressionEnum,
+    CompressionRequest,
 )
 
 
@@ -17,7 +21,7 @@ class TestJobSettings(unittest.TestCase):
 
     def test_class_constructor(self):
         """Tests basic class constructor from init args"""
-        job_settings = JobSettings(
+        job_settings = BehaviorVideoJobSettings(
             input_source=Path("some_path"),
             output_directory=Path("some_other_path"),
         )
@@ -27,30 +31,145 @@ class TestJobSettings(unittest.TestCase):
         )
 
 
+def helper_run_compression_job(job_settings, mock_time):
+    """Helper function to run compression job."""
+    mock_time.side_effect = [0, 1]
+    etl_job = BehaviorVideoJob(job_settings=job_settings)
+    return etl_job.run_job()
+
+
 class TestBehaviorVideoJob(unittest.TestCase):
     """Test methods in BehaviorVideoJob class."""
+
+    # NOTE:
+    # Test suite does not run yet.
+    # Resolving lint errors first.
+    test_data_path = Path("tests/test_video_in_dir").resolve()
+    dummy_response = JobResponse(
+        status_code=200,
+        message="Job finished in: 1",
+        data=None,
+    )
+    test_vid_name = "clip.mp4"
+    test_vid_path = test_data_path / test_vid_name
 
     @patch("aind_behavior_video_transformation.transform_videos.time")
     def test_run_job(self, mock_time: MagicMock):
         """Tests run_job method."""
+        input_dir = self.test_data_path
+        expected_response = self.dummy_response
+        test_vid_name = self.test_vid_name
+        for compression_enum in [
+            CompressionEnum.DEFAULT,
+            CompressionEnum.GAMMA_ENCODING,
+            CompressionEnum.NO_GAMMA_ENCODING,
+            CompressionEnum.NO_COMPRESSION,
+        ]:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                job_settings = BehaviorVideoJobSettings(
+                    input_source=input_dir,
+                    output_directory=temp_dir,
+                    compression_requested=CompressionRequest(
+                        compression_enum=compression_enum
+                    ),
+                )
+                response = helper_run_compression_job(job_settings, mock_time)
+                self.assertEqual(expected_response, response)
+                self.assertTrue(temp_path.joinpath(test_vid_name).exists())
 
-        job_settings = JobSettings(
-            input_source=Path("some_path"),
-            output_directory=Path("some_other_path"),
-        )
-        etl_job = BehaviorVideoJob(job_settings=job_settings)
-        t0 = 1726602472.6364267
-        t1 = 1726602475.3568988
-        dt = t1 - t0
-        mock_time.side_effect = [t0, t1]
-        response = etl_job.run_job()
+        # User Defined
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_settings = BehaviorVideoJobSettings(
+                input_source=input_dir,
+                output_directory=temp_dir,
+                compression_requested=CompressionRequest(
+                    compression_enum=CompressionEnum.USER_DEFINED,
+                    user_ffmpeg_input_options="-color_trc linear",
+                    user_ffmpeg_output_options=(
+                        "-c:v libx264 -preset veryfast -crf 40"
+                    ),
+                ),
+            )
+            response = helper_run_compression_job(job_settings, mock_time)
+            self.assertEqual(expected_response, response)
 
-        expected_response = JobResponse(
-            status_code=200,
-            message=f"Job finished in: {dt}",
-            data=None,
-        )
-        self.assertEqual(expected_response, response)
+    @patch("aind_behavior_video_transformation.transform_videos.time")
+    def test_run_job_with_data_structure(self, mock_time: MagicMock):
+        # Test that data file structure is maintained
+        test_vid_path = self.test_vid_path
+        test_vid_name = self.test_vid_name
+        dummy_response = self.dummy_response
+        metadata_file = "metadata.csv"
+        if not test_vid_path.is_file():
+            raise FileNotFoundError(f"File not found: {test_vid_path}")
+        camera_subdirs = [f"camera{i}" for i in range(1, 3)]
+        with tempfile.TemporaryDirectory() as in_temp_dir:
+            # Prepare input data
+            in_path = Path(in_temp_dir)
+            camera_in_paths = [in_path / d for d in camera_subdirs]
+            for camera_path in camera_in_paths:
+                camera_path.mkdir()
+                symlink(test_vid_path, camera_path / test_vid_name)
+                open(camera_path / metadata_file, "w").close()
+
+            with tempfile.TemporaryDirectory() as out_temp_dir:
+                out_path = Path(out_temp_dir)
+                job_settings = BehaviorVideoJobSettings(
+                    input_source=in_path,
+                    output_directory=out_path,
+                    compression_requested=CompressionRequest(
+                        compression_enum=CompressionEnum.DEFAULT,
+                    ),
+                )
+                response = helper_run_compression_job(job_settings, mock_time)
+                self.assertEqual(dummy_response, response)
+
+                for d in camera_subdirs:
+                    self.assertTrue(out_path.joinpath(d).exists())
+                    self.assertTrue(
+                        out_path.joinpath(d, test_vid_name).exists()
+                    )
+                    self.assertTrue(
+                        out_path.joinpath(d, metadata_file).exists()
+                    )
+
+            override_dir = camera_subdirs[0]
+            override_specifications = [
+                override_dir,
+                in_path / override_dir,
+                in_path / override_dir / test_vid_name,
+            ]
+            for override_spec in override_specifications:
+                with tempfile.TemporaryDirectory() as out_temp_dir:
+                    out_path = Path(out_temp_dir)
+                    job_settings = BehaviorVideoJobSettings(
+                        input_source=in_path,
+                        output_directory=out_path,
+                        compression_requested=CompressionRequest(
+                            compression_enum=CompressionEnum.DEFAULT,
+                        ),
+                        video_specific_compression_requests=[
+                            (
+                                override_spec,
+                                CompressionRequest(
+                                    compression_enum=CompressionEnum.NO_COMPRESSION  # noqa E501
+                                ),
+                            )
+                        ],
+                    )
+                    response = helper_run_compression_job(
+                        job_settings, mock_time
+                    )
+                    self.assertEqual(dummy_response, response)
+
+                    for d in camera_subdirs:
+                        self.assertTrue(out_path.joinpath(d).exists())
+                        self.assertTrue(
+                            out_path.joinpath(d, test_vid_name).exists()
+                        )
+                    overriden_out = out_path / override_dir / test_vid_name
+                    self.assertTrue(overriden_out.is_symlink())
 
 
 if __name__ == "__main__":
