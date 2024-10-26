@@ -2,9 +2,9 @@
 
 import tempfile
 import unittest
+from os import symlink
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from os import symlink
 
 from aind_data_transformation.core import JobResponse
 
@@ -153,7 +153,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                             (
                                 override_spec,
                                 CompressionRequest(
-                                    compression_enum=CompressionEnum.NO_COMPRESSION
+                                    compression_enum=CompressionEnum.NO_COMPRESSION  # noqa E501
                                 ),
                             )
                         ],
