@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Pull latest changes
-        run: git pull --ff-only origin fix-tag_workflow
+        run: git pull --ff-only origin fix-tag-workflow
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
