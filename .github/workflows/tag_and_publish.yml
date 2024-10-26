@@ -1,5 +1,8 @@
 name: Tag and publish
-on: workflow_dispatch
+on:
+  push:
+    branches:
+      - main
 jobs:
   update_badges:
     runs-on: ubuntu-latest
