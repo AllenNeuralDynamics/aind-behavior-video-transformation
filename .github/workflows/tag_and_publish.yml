@@ -117,3 +117,16 @@ jobs:
           echo ${{ secrets.GITHUB_TOKEN }} | singularity remote login -u ${{ github.actor }} --password-stdin oras://ghcr.io
           singularity push build/container.sif oras://ghcr.io/${GITHUB_REPOSITORY}:${{ needs.tag.outputs.new_version }}
           singularity push build/container.sif oras://ghcr.io/${GITHUB_REPOSITORY}:latest
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade setuptools wheel twine build
+          python -m build
+          twine check dist/*
+      - name: Publish on PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.AIND_PYPI_TOKEN }}

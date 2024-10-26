@@ -16,7 +16,7 @@ classifiers = [
 readme = "README.md"
 dynamic = ["version"]
 
-dependencies = ['aind-data-transformation>=0.0.18']
+dependencies = ['aind-data-transformation>=0.1.0']
 
 [project.optional-dependencies]
 dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort', 'Sphinx', 'furo']
