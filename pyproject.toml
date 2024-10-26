@@ -59,12 +59,12 @@ exclude_lines = [
   "import",
   "pragma: no cover",
 ]
-fail_under = 93
+fail_under = 97
 
 [tool.isort]
 line_length = 79
 profile = "black"
 
 [tool.interrogate]
-exclude = ["setup.py", "docs", "build"]
+exclude = ["setup.py", "docs", "build", "tests"]
 fail-under = 100
