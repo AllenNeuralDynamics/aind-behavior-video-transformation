@@ -104,26 +104,6 @@ class CompressionRequest(BaseModel):
         return arg_set
 
 
-class VideoCompressionPair(BaseModel):
-    """
-    A class used to represent a pair of video path and compression request.
-
-    Attributes
-    ----------
-    video_path : Union[Path, str]
-        Path to the video file to be compressed.
-    compression_requested : CompressionRequest
-        Compression request details.
-    """
-
-    video_path: Union[Path, str] = Field(
-        description="Path to the video file to be compressed"
-    )
-    compression_requested: CompressionRequest = Field(
-        default=CompressionRequest(), description="Compression request"
-    )
-
-
 class FfmpegInputArgs(Enum):
     """
     Input arguments referenced inside FfmpegArgSet
@@ -184,7 +164,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         description="Compression requested for video files",
     )
     video_specific_compression_requests: Optional[
-        List[VideoCompressionPair]
+        List[Tuple[Union[Path, str], CompressionRequest]]
     ] = Field(
         default=None,
         description=(
@@ -369,7 +349,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         job_in_dir_path = self.job_settings.input_source.resolve()
         overrides = dict()
         if video_comp_pairs:
-            for video_path, comp_req in video_comp_pairs:
+            for video_name, comp_req in video_comp_pairs:
+                video_path = Path(video_name)
                 # Figure out how video path was passed, convert to absolute
                 if video_path.is_absolute():
                     in_path = video_path
@@ -377,7 +358,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                     in_path = video_path.resolve()
                 else:
                     in_path = (job_in_dir_path / video_path).resolve()
-
                 # Set overrides for the video path
                 override_arg_set = comp_req.determine_ffmpeg_arg_set()
                 # If it is a directory, set overrides for all subdirectories
