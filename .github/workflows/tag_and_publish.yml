@@ -13,12 +13,16 @@ jobs:
         ref: ${{ env.DEFAULT_BRANCH }}
         fetch-depth: 0
         token: ${{ secrets.SERVICE_TOKEN }}
+    - uses: FedericoCarboni/setup-ffmpeg@v3
+      id: setup-ffmpeg
+      with:
+        ffmpeg-version: release
     - name: Set up Python 3.10
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
     - name: Install dependencies
-      run: | 
+      run: |
         python -m pip install -e .[dev] --no-cache-dir
     - name: Get Python version and Update README.md
       run: |
@@ -43,7 +47,7 @@ jobs:
         coverage run -m unittest discover
         coverage_val=$(coverage report | grep "^TOTAL" | grep -o '[0-9]\+%' | grep -o '[0-9]\+')
         coverage_badge=$(grep -o "coverage-[^?]*" README.md)
-        if (( $(echo "$coverage_val >= 90.00" | bc -l) )); then 
+        if (( $(echo "$coverage_val >= 90.00" | bc -l) )); then
             new_coverage_badge="coverage-$coverage_val%25-brightgreen"
         elif (( $(echo "$coverage_val < 80.00" | bc -l) )); then
             new_coverage_badge="coverage-$coverage_val%25-red"
@@ -59,7 +63,6 @@ jobs:
         add: '["README.md"]'
   tag:
     needs: update_badges
-    if: false
     uses: AllenNeuralDynamics/aind-github-actions/.github/workflows/tag.yml@main
     secrets:
       SERVICE_TOKEN: ${{ secrets.SERVICE_TOKEN }}
@@ -71,11 +74,10 @@ jobs:
       GO_ARCH: 'amd64'
       SINGULARITY_VERSION: '3.7.0'
     needs: tag
-    if: false
     steps:
       - uses: actions/checkout@v3
       - name: Pull latest changes
-        run: git pull origin main
+        run: git pull --ff-only origin main
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
@@ -115,3 +117,16 @@ jobs:
           echo ${{ secrets.GITHUB_TOKEN }} | singularity remote login -u ${{ github.actor }} --password-stdin oras://ghcr.io
           singularity push build/container.sif oras://ghcr.io/${GITHUB_REPOSITORY}:${{ needs.tag.outputs.new_version }}
           singularity push build/container.sif oras://ghcr.io/${GITHUB_REPOSITORY}:latest
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade setuptools wheel twine build
+          python -m build
+          twine check dist/*
+      - name: Publish on PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.AIND_PYPI_TOKEN }}
