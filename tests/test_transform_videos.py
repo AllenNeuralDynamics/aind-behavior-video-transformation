@@ -1,5 +1,7 @@
 """Tests transform_videos module."""
 
+import shlex
+import subprocess
 import tempfile
 import unittest
 from os import symlink
@@ -62,6 +64,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
         for compression_enum in [
             CompressionEnum.DEFAULT,
             CompressionEnum.GAMMA_ENCODING,
+            CompressionEnum.GAMMA_ENCODING_FIX_COLORSPACE,
             CompressionEnum.NO_GAMMA_ENCODING,
             CompressionEnum.NO_COMPRESSION,
         ]:
@@ -170,6 +173,47 @@ class TestBehaviorVideoJob(unittest.TestCase):
                         )
                     overriden_out = out_path / override_dir / test_vid_name
                     self.assertTrue(overriden_out.is_symlink())
+
+    @patch("aind_behavior_video_transformation.transform_videos.time")
+    def test_run_job_missing_colorspace(self, mock_time: MagicMock):
+        """Tests run_job method with missing colorspace."""
+        expected_response = self.dummy_response
+        test_vid_name = self.test_vid_name
+        test_vid_path = self.test_vid_path
+        with tempfile.TemporaryDirectory() as temp_in_dir:
+            temp_in_path = Path(temp_in_dir)
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-v",
+                "warning",
+                "-i",
+            ]
+            # Strip colorspace metadata from test video
+            temp_vid_path = temp_in_path / test_vid_name
+            ffmpeg_cmd.append(str(test_vid_path))
+            ffmpeg_cmd.extend(
+                shlex.split(
+                    "-c:v copy -bsf:v h264_metadata=colour_primaries=2:"
+                    "transfer_characteristics=2:matrix_coefficients=2"
+                )
+            )
+            ffmpeg_cmd.append(str(temp_vid_path))
+            subprocess.run(ffmpeg_cmd, check=True)
+            compression_enum = CompressionEnum.GAMMA_ENCODING_FIX_COLORSPACE
+            with tempfile.TemporaryDirectory() as temp_out_dir:
+                temp_out_path = Path(temp_out_dir)
+                job_settings = BehaviorVideoJobSettings(
+                    input_source=temp_in_path,
+                    output_directory=temp_out_dir,
+                    compression_requested=CompressionRequest(
+                        compression_enum=compression_enum
+                    ),
+                )
+                response = helper_run_compression_job(job_settings, mock_time)
+                self.assertEqual(expected_response, response)
+                self.assertTrue(temp_out_path.joinpath(test_vid_name).exists())
 
 
 if __name__ == "__main__":

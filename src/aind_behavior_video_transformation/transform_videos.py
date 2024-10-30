@@ -28,6 +28,9 @@ class CompressionEnum(Enum):
 
     DEFAULT = "default"
     GAMMA_ENCODING = "gamma"
+    GAMMA_ENCODING_FIX_COLORSPACE = (
+        "gamma after repairing missing input colorspace"
+    )
     NO_GAMMA_ENCODING = "no gamma"
     USER_DEFINED = "user defined"
     NO_COMPRESSION = "no compression"
@@ -126,6 +129,20 @@ class FfmpegOutputArgs(Enum):
         '-metadata author="Allen Institute for Neural Dyamics" '
         "-movflags +faststart+write_colr"
     )
+
+    # Many video files are missing colorspace metadata, which is necessary for
+    # correct gamma conversion. This option applies commonly used values at
+    # AIND, which are assumed to be correct for most videos.
+    GAMMA_ENCODING_FIX_INPUT_COLOR = (
+        "-vf "
+        '"setparams=color_primaries=bt709:color_trc=linear:colorspace=bt709,'
+        "scale=out_color_matrix=bt709:out_range=full:sws_dither=none,"
+        "colorspace=ispace=bt709:all=bt709:dither=none,"
+        'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
+        "-preset veryslow -crf 18 -pix_fmt yuv420p "
+        '-metadata author="Allen Institute for Neural Dyamics" '
+        "-movflags +faststart+write_colr"
+    )
     NO_GAMMA_ENCODING = (
         "-vf "
         '"scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
@@ -146,6 +163,10 @@ class FfmpegArgSet(Enum):
     GAMMA_ENCODING = (
         FfmpegInputArgs.NONE,
         FfmpegOutputArgs.GAMMA_ENCODING,
+    )
+    GAMMA_ENCODING_FIX_COLORSPACE = (
+        FfmpegInputArgs.NONE,
+        FfmpegOutputArgs.GAMMA_ENCODING_FIX_INPUT_COLOR,
     )
     NO_GAMMA_ENCODING = (
         FfmpegInputArgs.NONE,
