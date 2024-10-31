@@ -2,5 +2,11 @@
 
 __version__ = "0.1.0"
 
-from .etl import BehaviorVideoJob, BehaviorVideoJobSettings  # noqa F401
-from .transform_videos import CompressionEnum, CompressionRequest  # noqa F401
+from aind_behavior_video_transformation.etl import (  # noqa F401
+    BehaviorVideoJob,
+    BehaviorVideoJobSettings,
+)
+from aind_behavior_video_transformation.transform_videos import (  # noqa F401
+    CompressionEnum,
+    CompressionRequest,
+)

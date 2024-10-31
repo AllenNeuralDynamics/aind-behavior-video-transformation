@@ -14,8 +14,13 @@ from aind_data_transformation.core import (
 )
 from pydantic import Field
 
-from .filesystem import build_overrides_dict, transform_directory
-from .transform_videos import CompressionRequest
+from aind_behavior_video_transformation.filesystem import (
+    build_overrides_dict,
+    transform_directory,
+)
+from aind_behavior_video_transformation.transform_videos import (
+    CompressionRequest,
+)
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
