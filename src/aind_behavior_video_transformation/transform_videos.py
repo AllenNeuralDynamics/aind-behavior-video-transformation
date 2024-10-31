@@ -19,9 +19,7 @@ class CompressionEnum(Enum):
 
     DEFAULT = "default"
     GAMMA_ENCODING = "gamma"
-    GAMMA_ENCODING_FIX_COLORSPACE = (
-        "gamma after repairing missing input colorspace"
-    )
+    GAMMA_ENCODING_FIX_COLORSPACE = "gamma fix colorspace"
     NO_GAMMA_ENCODING = "no gamma"
     USER_DEFINED = "user defined"
     NO_COMPRESSION = "no compression"
