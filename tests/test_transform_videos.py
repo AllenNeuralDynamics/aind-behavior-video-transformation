@@ -174,7 +174,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     overriden_out = out_path / override_dir / test_vid_name
                     self.assertTrue(overriden_out.is_symlink())
 
-    @patch("aind_behavior_video_transformation.transform_videos.time")
+    @patch("aind_behavior_video_transformation.etl.time")
     def test_run_job_missing_colorspace(self, mock_time: MagicMock):
         """Tests run_job method with missing colorspace."""
         expected_response = self.dummy_response
