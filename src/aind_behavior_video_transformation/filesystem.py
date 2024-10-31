@@ -1,4 +1,4 @@
-"""foobar"""
+"""Module for handling file discovery to transform videos."""
 
 from os import symlink, walk
 from os.path import relpath
