@@ -367,6 +367,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             self.job_settings.video_specific_compression_requests
         )
         job_out_dir_path = self.job_settings.output_directory.resolve()
+        Path(job_out_dir_path).mkdir(exist_ok=True)
         job_in_dir_path = self.job_settings.input_source.resolve()
         overrides = dict()
         if video_comp_pairs:
