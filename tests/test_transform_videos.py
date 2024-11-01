@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from aind_data_transformation.core import JobResponse
 
-from aind_behavior_video_transformation.transform_videos import (
+from aind_behavior_video_transformation import (
     BehaviorVideoJob,
     BehaviorVideoJobSettings,
     CompressionEnum,
@@ -55,7 +55,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
     test_vid_name = "clip.mp4"
     test_vid_path = test_data_path / test_vid_name
 
-    @patch("aind_behavior_video_transformation.transform_videos.time")
+    @patch("aind_behavior_video_transformation.etl.time")
     def test_run_job(self, mock_time: MagicMock):
         """Tests run_job method."""
         input_dir = self.test_data_path
@@ -97,7 +97,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
             response = helper_run_compression_job(job_settings, mock_time)
             self.assertEqual(expected_response, response)
 
-    @patch("aind_behavior_video_transformation.transform_videos.time")
+    @patch("aind_behavior_video_transformation.etl.time")
     def test_run_job_with_data_structure(self, mock_time: MagicMock):
         # Test that data file structure is maintained
         test_vid_path = self.test_vid_path
@@ -174,7 +174,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     overriden_out = out_path / override_dir / test_vid_name
                     self.assertTrue(overriden_out.is_symlink())
 
-    @patch("aind_behavior_video_transformation.transform_videos.time")
+    @patch("aind_behavior_video_transformation.etl.time")
     def test_run_job_missing_colorspace(self, mock_time: MagicMock):
         """Tests run_job method with missing colorspace."""
         expected_response = self.dummy_response
