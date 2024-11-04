@@ -14,14 +14,12 @@ from aind_data_transformation.core import (
 )
 from pydantic import Field
 
-from aind_behavior_video_transformation.filesystem import (
-    build_overrides_dict,
-    transform_directory,
-)
 from aind_behavior_video_transformation.transform_videos import (
-    CompressionRequest,
+    CompressionRequest, convert_video
 )
 
+
+PathLike = Union[Path, str]
 
 class BehaviorVideoJobSettings(BasicJobSettings):
     """
@@ -34,7 +32,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         description="Compression requested for video files",
     )
     video_specific_compression_requests: Optional[
-        List[Tuple[Union[Path, str], CompressionRequest]]
+        List[Tuple[PathLike, CompressionRequest]]
     ] = Field(
         default=None,
         description=(
@@ -43,6 +41,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
+    video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm"]
 
 
 class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
@@ -64,6 +63,96 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     run_job() -> JobResponse
     """
 
+    def _format_output_directory(self) -> None:
+        """
+        Recurisively copies (symlink) non-video files
+        from input directory to output directory
+        perserving filesysem structure.
+        """
+        input_dir = Path(self.job_settings.input_source.resolve())
+        output_dir = Path(self.job_settings.output_directory.resolve())
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for file in input_dir.rglob('*'):
+            if (file.is_file() and
+                not any(file.suffix.lower() == ext
+                        for ext in self.job_settings.video_extensions)):
+                relative_path = file.relative_to(input_dir)
+                target_link = output_dir / relative_path
+                target_link.parent.mkdir(parents=True, exist_ok=True)
+                target_link.symlink_to(file)
+
+
+    def _resolve_compression_requests(
+        self
+        ) -> List[Tuple[PathLike, CompressionRequest]]:
+        """
+        Recursively traverses input directory and
+        resolves CompressionRequest of all videos.
+
+        Sets 'compression_requested' as the default, unless
+        overrided in 'video_specific_compression_requests'.
+        """
+        input_dir = Path(self.job_settings.input_source.resolve())
+
+        # Define map: abs_path -> override CompressionRequest
+        overrides = {}
+        for vid_path, comp_req in self.job_settings.video_specific_compression_requests:
+            vid_path = Path(vid_path)
+            abs_path = None
+            if vid_path.is_absolute():
+                abs_path = vid_path
+            elif vid_path.exists():
+                abs_path = vid_path.resolve()
+            else:
+                abs_path = (input_dir / vid_path).resolve()
+            overrides[abs_path] = comp_req
+
+        # Produce list of all (abs_path, CompressionRequest) pairs
+        path_comp_req_pairs = \
+            [(file, self.job_settings.compression_requested)
+             for file in input_dir.rglob('*')
+             if (file.is_file() and any(file.suffix.lower() == ext
+                    for ext in self.job_settings.video_extensions))]
+        path_comp_req_pairs = \
+            [(file, overrides[file])
+            for (file, _) in path_comp_req_pairs
+            if file in overrides]
+
+        return path_comp_req_pairs
+
+
+    def _run_compression(
+        self,
+        path_comp_req_pairs: List[Tuple[PathLike, CompressionRequest]],
+        parallel=True
+        ) -> None:
+        """
+        Runs CompressionRequests at the specified paths.
+        """
+        input_dir = Path(self.job_settings.input_source.resolve())
+        output_dir = Path(self.job_settings.output_directory.resolve())
+
+        convert_video_params = []
+        for vid_path, comp_req in path_comp_req_pairs:
+            # Resolve destination
+            relative_path = vid_path.relative_to(input_dir)
+            output_path = output_dir / relative_path
+            output_dir = output_path.parent
+
+            # Resolve compression params
+            arg_set = comp_req.determine_ffmpeg_arg_set()
+
+            # Add to job buffer
+            convert_video_params.append((vid_path, output_dir, arg_set))
+            logging.info(f'Compressing {str(vid_path)} w/ {comp_req.compression_enum}')
+
+        # TODO: Parallelize this loop with Dask/Futures.
+        # Most important is no silent errors.
+        for params in convert_video_params:
+            convert_video(params)
+
+
     def run_job(self) -> JobResponse:
         """
         Main public method to run the compression job.
@@ -83,20 +172,10 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         """
         job_start_time = time()
 
-        video_comp_pairs = (
-            self.job_settings.video_specific_compression_requests
-        )
-        job_out_dir_path = self.job_settings.output_directory.resolve()
-        Path(job_out_dir_path).mkdir(exist_ok=True)
-        job_in_dir_path = self.job_settings.input_source.resolve()
-        overrides = build_overrides_dict(video_comp_pairs, job_in_dir_path)
+        self._format_output_directory()
+        path_comp_req_pairs = self._resolve_compression_requests()
+        self._run_compression(path_comp_req_pairs)
 
-        ffmpeg_arg_set = (
-            self.job_settings.compression_requested.determine_ffmpeg_arg_set()
-        )
-        transform_directory(
-            job_in_dir_path, job_out_dir_path, ffmpeg_arg_set, overrides
-        )
         job_end_time = time()
         return JobResponse(
             status_code=200,

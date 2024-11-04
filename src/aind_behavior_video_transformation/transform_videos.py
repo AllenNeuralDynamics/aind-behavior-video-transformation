@@ -1,6 +1,17 @@
-"""Module to handle transforming behavior videos"""
+"""
+Module to handle transforming behavior videos
 
-import logging
+To add a new compression preset:
+1) Define a CompressionEnum: 'CUSTOM_COMPRESSION = 'custom'
+2) Define corresponding FfmpegInputArgs/FfmpegOutputArgs.
+3) Add the CompressionEnum to FfmpegArgSet, and build
+   (FfmpegInputArgs, FfmpegOutputArgs) tuple:
+   'CUSTOM_COMPRESSION' = (
+        FfmpegInputArgs.CUSTOM_INPUT_ARGS,
+        FfmpegOutputArgs.CUSTOM_OUTPUT_ARGS,
+    )
+"""
+
 import shlex
 import subprocess
 from enum import Enum
@@ -123,7 +134,7 @@ class CompressionRequest(BaseModel):
 
     def determine_ffmpeg_arg_set(
         self,
-    ) -> Optional[Tuple[Optional[str], Optional[str]]]:
+    ) -> Optional[Tuple[str, str]]:
         """
         Determines the appropriate set of FFmpeg arguments based on the
         compression requirements.
@@ -153,6 +164,7 @@ class CompressionRequest(BaseModel):
                 self.user_ffmpeg_input_options,
                 self.user_ffmpeg_output_options,
             )
+
         # If not one of the two special cases, use the enum values
         else:
             # If default, set compression to gamma
@@ -160,12 +172,21 @@ class CompressionRequest(BaseModel):
                 compression_preset = CompressionEnum.GAMMA_ENCODING
             else:
                 compression_preset = self.compression_enum
+
+            # Resolve two levels of indirection here
+            # FfmpegArgSet -> (FfmpegInputArgs, FfmpegOutputArgs)
+            # (FfmpegInputArgs, FfmpegOutputArgs) -> (in_args str, out_args str)
             arg_set_enum = FfmpegArgSet[compression_preset.name].value
             arg_set = (arg_set_enum[0].value, arg_set_enum[1].value)
+
         return arg_set
 
 
-def convert_video(video_path: Path, dst: Path, arg_set) -> Path:
+def convert_video(
+    video_path: Path,
+    output_dir: Path,
+    arg_set: Optional[Tuple[str, str]]
+    ) -> Path:
     """
     Converts a video to a specified format using ffmpeg.
 
@@ -173,7 +194,7 @@ def convert_video(video_path: Path, dst: Path, arg_set) -> Path:
     ----------
     video_path : Path
         The path to the input video file.
-    dst : Path
+    output_dir : Path
         The destination directory where the converted video will be saved.
     arg_set : tuple or None
         A tuple containing input and output arguments for ffmpeg. If None, a
@@ -189,11 +210,9 @@ def convert_video(video_path: Path, dst: Path, arg_set) -> Path:
     - The function uses ffmpeg for video conversion.
     - If `arg_set` is None, the function creates a symlink to the original
         video file.
-    - The function logs the ffmpeg command used for conversion.
     """
 
-    out_path = dst / f"{video_path.stem}.mp4"  # noqa: E501
-    # Pydantic validation ensures this is a 'CompressionRequest' value.
+    out_path = output_dir / f"{video_path.stem}.mp4"  # noqa: E501
 
     # Trivial Case, do nothing
     if arg_set is None:
@@ -210,10 +229,6 @@ def convert_video(video_path: Path, dst: Path, arg_set) -> Path:
     if output_args:
         ffmpeg_command.extend(shlex.split(output_args))
     ffmpeg_command.append(str(out_path))
-
-    # For logging I guess
-    ffmpeg_str = " ".join(ffmpeg_command)
-    logging.info(f"{ffmpeg_str=}")
 
     subprocess.run(ffmpeg_command, check=True)
 
