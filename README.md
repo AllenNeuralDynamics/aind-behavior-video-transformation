@@ -9,9 +9,9 @@
 
 This project is used to encode behavior videos and, depending on the user
 request, will compress those videos while ensuring that they are formatted for
-correct display across many devices. This may include performing common image
-pre-processing steps that are common across many commercial video products, but
-have to be done post-hoc for our behavior videos.
+correct display across many devices. This may include common image
+preprocessing steps, such as gamma encoding, that are necessary for correct
+display, but have to be done post-hoc for our behavior videos.
 
 ## Goals
 
@@ -24,10 +24,10 @@ This will attempt to compress videos so that the results:
 * Have pixel data in a color space that most players can properly display
 
 This video compression is often lossy, and the original videos are not kept, so
-this library will attempt to perform the highest-quality video compression once.
-The _speed_ of this compression is strictly secondary to the _quality_ of the
-compression, as measured by the visual detail retained and the compression
-ratio. See
+this library will attempt to produce the highest-quality video for a target
+compression ratio. The _speed_ of this compression is strictly secondary to the
+_quality_ of the compression, as measured by the visual detail retained and the
+compression ratio. See
 [this section](#brief-benchmarks-on-video-compression-with-cpu-based-encoders-and-gpu-based-encoders)
 for more details.
 
@@ -35,18 +35,20 @@ for more details.
 Additionally, this package should provide an easy to use interface that:
 
 * Presents users with a curated set of compression settings, which have been
-  rigorously tested
+  rigorously tested in terms of their visual quality using perception-based
+  metrics like VMAF.
 * Allow users to also provide their own compression settings, if they have
   specific requirements
 
 ## Non-goals
 
-* Spending as little time and compute resources as possible to transform videos,
-  at the expense of compression quality.
+* Sacrifice the visual fidelity of videos in order to decrease encoding time.
 
 ## Usage
- - The BehaviorVideoJob.run_job method in the transform_videos should be the primary method to call for processing video files.
- - On a merge to main, this package will be published as a singularity container, which can easily be run on a SLURM cluster.
+ - The BehaviorVideoJob.run_job method in the transform_videos should be the
+   primary method to call for processing video files.
+ - On a merge to main, this package will be published as a singularity
+   container, which can easily be run on a SLURM cluster.
 
 ## Brief benchmarks on video compression with CPU-based encoders and GPU-based encoders
 
