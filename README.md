@@ -52,27 +52,38 @@ Additionally, this package should provide an easy to use interface that:
 
 ## Brief benchmarks on video compression with CPU-based encoders and GPU-based encoders
 
-A perhaps surprising fact is that video encoders implementing the same algorithm
-written for different compute resources
-_do not have the same visual performance_, in that for a given compression ratio
-they do not retain the same amount of visual detail.
+A surprising fact is that video encoders implementing the same algorithm, but
+written for different compute resources do _not_ have the same visual
+performance; for a given compression ratio, or similar settings, they do not
+retain the same amount of visual detail. This is also true for different presets
+of the same encoder and compute resource even if the other settings are
+identical. For example, the presets `-preset fast` and `-preset veryslow` of the
+encoder `libx264` produce videos with the same compression ratio, but differing
+visual quality.
 
 This can be seen in the plot below, where the GPU encoder and CPU encoders
-retain different amounts of visual detail, as assessed with VMAF.
+retain different amounts of visual detail, as assessed with visual
+perception-based metric
+[VMAF](https://en.wikipedia.org/wiki/Video_Multimethod_Assessment_Fusion). Also
+note the difference between presets for the same encoder and compute resource:
+_CPU Fast_ and _CPU Slow_.
 
 ![visual performance vs compress ratio](/assets/compression-vs-quality.png)
 
-This also shows that different presets of the same encoder, like _CPU Slow_ and
-_CPU Fast_, also have different performance. For comrpession ratios greater than
-100, it often makes sense to take your time and use a slow preset of a CPU-based
-encoder to retain as much visual information for a given amount of compression.
+This figure shows that for compression ratios greater than 100, it often makes
+sense to take your time and use a slow preset of a CPU-based encoder to retain
+as much visual information for a given amount of compression.
 
 While it may be tempting to select a faster preset, or faster compute resource
-like GPU for dramatic speedups shown below, the lossy compression and intent to
-delete the original means that taking time to do it right once might well be
-worth it.
+like GPU for dramatic speedups shown below, doing will degrade the quality of
+the resulting video.
 
 ![throughput vs compress ratio](/assets/compression-vs-speed.png)
+
+Because the output of this package are permanent video artifacts, the
+compression is lossy, and the intent is to delete the original, taking the CPU
+time to produce the highest quality video possible might well be worth it.
+
 
 ## Development
 
