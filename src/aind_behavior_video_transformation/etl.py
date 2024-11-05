@@ -84,8 +84,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for file in input_dir.rglob("*"):
-            if (file.is_file() and not
-               (file.suffix.lower() in self.job_settings.video_extensions)
+            if file.is_file() and not (
+                file.suffix.lower() in self.job_settings.video_extensions
             ):
                 relative_path = file.relative_to(input_dir)
                 target_link = output_dir / relative_path
@@ -108,7 +108,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         path_req_pairs: List[Tuple[Path, CompressionRequest]] = [
             (file.resolve(), self.job_settings.compression_requested)
             for file in input_dir.rglob("*")
-            if (file.is_file()
+            if (
+                file.is_file()
                 and (file.suffix.lower() in self.job_settings.video_extensions)
             )
         ]
@@ -129,11 +130,11 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                 # Case 2: Override Path is a subdirectory (relative/absolute)
                 else:
                     if not override_path.is_absolute():
-                        override_path = (input_dir / override_path)
+                        override_path = input_dir / override_path
                     for override_file in override_path.rglob("*"):
-                        if (override_file.is_file() and
-                           (override_file.suffix.lower()
-                            in self.job_settings.video_extensions)
+                        if override_file.is_file() and (
+                            override_file.suffix.lower()
+                            in self.job_settings.video_extensions
                         ):
                             override_file = override_file.resolve()
                             overrides[override_file] = override_req
@@ -259,7 +260,5 @@ if __name__ == "__main__":
     print(job_response.status_code)
     logging.info(job_response.model_dump_json())
 
-
 # TODO:
 # Expose parallel parameter.
-# Linting

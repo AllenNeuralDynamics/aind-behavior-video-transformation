@@ -110,7 +110,9 @@ class TestBehaviorVideoJob(unittest.TestCase):
             camera_in_paths = [in_path / d for d in camera_subdirs]
             for camera_path in camera_in_paths:
                 camera_path.mkdir()
-                shutil.copy(str(test_vid_path), str(camera_path / test_vid_name))
+                shutil.copy(
+                    str(test_vid_path), str(camera_path / test_vid_name)
+                )
                 open(camera_path / metadata_file, "w").close()
 
             with tempfile.TemporaryDirectory() as out_temp_dir:
