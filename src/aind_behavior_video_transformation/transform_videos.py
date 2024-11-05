@@ -184,7 +184,10 @@ class CompressionRequest(BaseModel):
 
 
 def convert_video(
-    video_path: Path, output_dir: Path, arg_set: Optional[Tuple[str, str]]
+    video_path: Path,
+    output_dir: Path,
+    arg_set: Optional[Tuple[str, str]],
+    ffmpeg_thread_cnt: int = 8
 ) -> Path:
     """
     Converts a video to a specified format using ffmpeg.
@@ -222,8 +225,9 @@ def convert_video(
     output_args = arg_set[1]
 
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
-    # Use 8 threads per compression job
-    ffmpeg_command.extend(["-threads", "8"])
+
+    # Set thread count
+    ffmpeg_command.extend(["-threads", str(ffmpeg_thread_cnt)])
 
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))

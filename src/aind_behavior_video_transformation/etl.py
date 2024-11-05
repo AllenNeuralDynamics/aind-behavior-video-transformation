@@ -47,6 +47,10 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         default=True,
         description="Run compression in parallel or sequentially.",
     )
+    ffmpeg_thread_cnt: int = Field(
+        default=8,
+        description="Number of threads per ffmpeg compression job."
+    )
     video_extensions: List[str] = [
         ".mp4",
         ".avi",
@@ -187,7 +191,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             num_jobs = len(convert_video_params)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
                 jobs = [
-                    executor.submit(convert_video, *params)
+                    executor.submit(convert_video, *params,
+                                    self.job_settings.ffmpeg_thread_cnt)
                     for params in convert_video_params
                 ]
                 for job in as_completed(jobs):
@@ -200,7 +205,11 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         else:
             # Execute Serially
             for params in convert_video_params:
-                convert_video(params)
+                try:
+                    convert_video(*params, self.job_settings.ffmpeg_thread_cnt)
+                    logging.info("FFmpeg job completed:", result)
+                except Exception as e:
+                    logging.info("Error:", e)
 
     def run_job(self) -> JobResponse:
         """
@@ -256,3 +265,10 @@ if __name__ == "__main__":
     job_response = job.run_job()
     print(job_response.status_code)
     logging.info(job_response.model_dump_json())
+
+# TODO:
+# - Expose number of thread parameter
+# - Add unit tests for helper methods
+# - Unit test convert_video
+
+# Will push this in at the end and call it a day.
