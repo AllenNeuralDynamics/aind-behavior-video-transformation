@@ -12,6 +12,7 @@ from aind_data_transformation.core import (
     JobResponse,
     get_parser,
 )
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pydantic import Field
 
 from aind_behavior_video_transformation.transform_videos import (
@@ -147,10 +148,28 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             convert_video_params.append((vid_path, output_dir, arg_set))
             logging.info(f'Compressing {str(vid_path)} w/ {comp_req.compression_enum}')
 
-        # TODO: Parallelize this loop with Dask/Futures.
-        # Most important is no silent errors.
-        for params in convert_video_params:
-            convert_video(params)
+        if parallel:
+            # Dask implementation
+            # import dask
+            # jobs = [dask.delayed(convert_video)(*params) for params in convert_video_params]
+            # dask.compute(*jobs)  # This returns an error if any jobs fail
+
+            # ProcessPool implementation
+            num_jobs = len(convert_video_params)
+            with ProcessPoolExecutor(max_workers=num_jobs) as executor:
+                jobs = [executor.submit(convert_video, *params)
+                        for params in convert_video_params]
+                for job in as_completed(jobs):
+                    try:
+                        result = job.result()
+                        print("FFmpeg job completed:", result)
+                    except Exception as e:
+                        print("Error:", e)
+
+        else:
+            # Execute Serially
+            for params in convert_video_params:
+                convert_video(params)
 
 
     def run_job(self) -> JobResponse:

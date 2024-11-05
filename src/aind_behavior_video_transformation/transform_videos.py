@@ -223,6 +223,7 @@ def convert_video(
     output_args = arg_set[1]
 
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
+    ffmpeg_command.extend(["-threads", "8"])  # Use 8 threads per compression job
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))
     ffmpeg_command.extend(["-i", str(video_path)])
