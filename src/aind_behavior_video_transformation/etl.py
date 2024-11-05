@@ -43,6 +43,10 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
+    parallel_compression: bool = Field(
+        default=True,
+        description="Run compression in parallel or sequentially.",
+    )
     video_extensions: List[str] = [
         ".mp4",
         ".avi",
@@ -154,7 +158,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     def _run_compression(
         self,
         path_comp_req_pairs: List[Tuple[PathLike, CompressionRequest]],
-        parallel=True,
     ) -> None:
         """
         Runs CompressionRequests at the specified paths.
@@ -179,7 +182,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                          w/ {comp_req.compression_enum}"
             )
 
-        if parallel:
+        if self.job_settings.parallel_compression:
             # Dask implementation
             # import dask
             # jobs = [dask.delayed(convert_video)(*params)
@@ -259,6 +262,3 @@ if __name__ == "__main__":
     job_response = job.run_job()
     print(job_response.status_code)
     logging.info(job_response.model_dump_json())
-
-# TODO:
-# Expose parallel parameter.
