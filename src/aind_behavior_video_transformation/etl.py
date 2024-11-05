@@ -104,34 +104,51 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         """
         input_dir = Path(self.job_settings.input_source.resolve())
 
-        # Define map: abs_path -> override CompressionRequest
-        overrides = {}
-        comp_reqs = self.job_settings.video_specific_compression_requests
-        if comp_reqs:
-            for vid_path, comp_req in comp_reqs:
-                vid_path = Path(vid_path)
-                abs_path = None
-                if vid_path.is_absolute():
-                    abs_path = vid_path
-                elif vid_path.exists():
-                    abs_path = vid_path.resolve()
-                else:
-                    abs_path = (input_dir / vid_path).resolve()
-                overrides[abs_path] = comp_req
-
-        # Produce list of all (abs_path, CompressionRequest) pairs
-        path_comp_req_pairs = [
-            (file, self.job_settings.compression_requested)
+        # Set all videos to global compression setting
+        path_req_pairs: List[Tuple[Path, CompressionRequest]] = [
+            (file.resolve(), self.job_settings.compression_requested)
             for file in input_dir.rglob("*")
             if (file.is_file()
                 and (file.suffix.lower() in self.job_settings.video_extensions)
             )
         ]
-        for file, override in overrides.items():
-            path_comp_req_pairs.pop((file, self.job_settings.compression_requested))
-            path_comp_req_pairs.append((file, override))
 
-        return path_comp_req_pairs
+        # Apply overrides if present.
+        comp_reqs = self.job_settings.video_specific_compression_requests
+        if comp_reqs:
+            # Define map: override abs_vid_path -> override CompressionRequest
+            overrides: dict[Path, CompressionRequest] = {}
+            for override_path, override_req in comp_reqs:
+                override_path = Path(override_path)
+
+                # Case 1: Override Path is a file.
+                if override_path.is_file():
+                    override_path = override_path.resolve()
+                    overrides[override_path] = override_req
+
+                # Case 2: Override Path is a subdirectory (relative/absolute)
+                else:
+                    if not override_path.is_absolute():
+                        override_path = (input_dir / override_path)
+                    for override_file in override_path.rglob("*"):
+                        if (override_file.is_file() and
+                           (override_file.suffix.lower()
+                            in self.job_settings.video_extensions)
+                        ):
+                            override_file = override_file.resolve()
+                            overrides[override_file] = override_req
+
+            # Filter path_req_pairs by overrides.
+            output_pairs: List[Tuple[Path, CompressionRequest]] = []
+            for vid_path, default_req in path_req_pairs:
+                for override_path, override_req in overrides.items():
+                    if vid_path.samefile(override_path):
+                        output_pairs.append((override_path, override_req))
+                    else:
+                        output_pairs.append((vid_path, default_req))
+            path_req_pairs = output_pairs
+
+        return path_req_pairs
 
     def _run_compression(
         self,
@@ -149,13 +166,13 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             # Resolve destination
             relative_path = vid_path.relative_to(input_dir)
             output_path = output_dir / relative_path
-            output_dir = output_path.parent
+            output_vid_dir = output_path.parent
 
             # Resolve compression params
             arg_set = comp_req.determine_ffmpeg_arg_set()
 
             # Add to job buffer
-            convert_video_params.append((vid_path, output_dir, arg_set))
+            convert_video_params.append((vid_path, output_vid_dir, arg_set))
             logging.info(
                 f"Compressing {str(vid_path)} \
                          w/ {comp_req.compression_enum}"
@@ -178,9 +195,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                 for job in as_completed(jobs):
                     try:
                         result = job.result()
-                        print("FFmpeg job completed:", result)
+                        logging.info("FFmpeg job completed:", result)
                     except Exception as e:
-                        print("Error:", e)
+                        logging.info("Error:", e)
 
         else:
             # Execute Serially
@@ -217,8 +234,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             data=None,
         )
 
-# Resolve last error tomorrow, requires reading the test code
-# to see what it is expecting. 
 
 if __name__ == "__main__":
     sys_args = sys.argv[1:]
@@ -242,5 +257,9 @@ if __name__ == "__main__":
     job = BehaviorVideoJob(job_settings=job_settings)
     job_response = job.run_job()
     print(job_response.status_code)
-
     logging.info(job_response.model_dump_json())
+
+
+# TODO:
+# Expose parallel parameter.
+# Linting
