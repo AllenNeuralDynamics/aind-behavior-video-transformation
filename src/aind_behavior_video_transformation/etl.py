@@ -43,7 +43,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
-    video_extensions = [
+    video_extensions: List[str] = [
         ".mp4",
         ".avi",
         ".mov",
@@ -84,9 +84,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for file in input_dir.rglob("*"):
-            if file.is_file() and not any(
-                file.suffix.lower() == ext
-                for ext in self.job_settings.video_extensions
+            if (file.is_file() and not
+               (file.suffix.lower() in self.job_settings.video_extensions)
             ):
                 relative_path = file.relative_to(input_dir)
                 target_link = output_dir / relative_path
@@ -108,34 +107,29 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         # Define map: abs_path -> override CompressionRequest
         overrides = {}
         comp_reqs = self.job_settings.video_specific_compression_requests
-        for vid_path, comp_req in comp_reqs:
-            vid_path = Path(vid_path)
-            abs_path = None
-            if vid_path.is_absolute():
-                abs_path = vid_path
-            elif vid_path.exists():
-                abs_path = vid_path.resolve()
-            else:
-                abs_path = (input_dir / vid_path).resolve()
-            overrides[abs_path] = comp_req
+        if comp_reqs:
+            for vid_path, comp_req in comp_reqs:
+                vid_path = Path(vid_path)
+                abs_path = None
+                if vid_path.is_absolute():
+                    abs_path = vid_path
+                elif vid_path.exists():
+                    abs_path = vid_path.resolve()
+                else:
+                    abs_path = (input_dir / vid_path).resolve()
+                overrides[abs_path] = comp_req
 
         # Produce list of all (abs_path, CompressionRequest) pairs
         path_comp_req_pairs = [
             (file, self.job_settings.compression_requested)
             for file in input_dir.rglob("*")
-            if (
-                file.is_file()
-                and any(
-                    file.suffix.lower() == ext
-                    for ext in self.job_settings.video_extensions
-                )
+            if (file.is_file()
+                and (file.suffix.lower() in self.job_settings.video_extensions)
             )
         ]
-        path_comp_req_pairs = [
-            (file, overrides[file])
-            for (file, _) in path_comp_req_pairs
-            if file in overrides
-        ]
+        for file, override in overrides.items():
+            path_comp_req_pairs.pop((file, self.job_settings.compression_requested))
+            path_comp_req_pairs.append((file, override))
 
         return path_comp_req_pairs
 
@@ -223,6 +217,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             data=None,
         )
 
+# Resolve last error tomorrow, requires reading the test code
+# to see what it is expecting. 
 
 if __name__ == "__main__":
     sys_args = sys.argv[1:]
