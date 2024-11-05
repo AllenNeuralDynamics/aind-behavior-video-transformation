@@ -175,7 +175,8 @@ class CompressionRequest(BaseModel):
 
             # Resolve two levels of indirection here
             # FfmpegArgSet -> (FfmpegInputArgs, FfmpegOutputArgs)
-            # (FfmpegInputArgs, FfmpegOutputArgs) -> (in_args str, out_args str)
+            # (FfmpegInputArgs, FfmpegOutputArgs)
+            #      -> (in_args str, out_args str)
             arg_set_enum = FfmpegArgSet[compression_preset.name].value
             arg_set = (arg_set_enum[0].value, arg_set_enum[1].value)
 
@@ -183,10 +184,8 @@ class CompressionRequest(BaseModel):
 
 
 def convert_video(
-    video_path: Path,
-    output_dir: Path,
-    arg_set: Optional[Tuple[str, str]]
-    ) -> Path:
+    video_path: Path, output_dir: Path, arg_set: Optional[Tuple[str, str]]
+) -> Path:
     """
     Converts a video to a specified format using ffmpeg.
 
@@ -223,7 +222,9 @@ def convert_video(
     output_args = arg_set[1]
 
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
-    ffmpeg_command.extend(["-threads", "8"])  # Use 8 threads per compression job
+    # Use 8 threads per compression job
+    ffmpeg_command.extend(["-threads", "8"])
+
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))
     ffmpeg_command.extend(["-i", str(video_path)])
