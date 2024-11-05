@@ -183,12 +183,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             )
 
         if self.job_settings.parallel_compression:
-            # Dask implementation
-            # import dask
-            # jobs = [dask.delayed(convert_video)(*params)
-            #         for params in convert_video_params]
-            # dask.compute(*jobs)  # This returns an error if any jobs fail
-
             # ProcessPool implementation
             num_jobs = len(convert_video_params)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
