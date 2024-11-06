@@ -1,10 +1,10 @@
 """Tests transform_videos module."""
 
 import shlex
-import shutil
 import subprocess
 import tempfile
 import unittest
+from os import symlink
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -43,6 +43,9 @@ def helper_run_compression_job(job_settings, mock_time):
 class TestBehaviorVideoJob(unittest.TestCase):
     """Test methods in BehaviorVideoJob class."""
 
+    # NOTE:
+    # Test suite does not run yet.
+    # Resolving lint errors first.
     test_data_path = Path("tests/test_video_in_dir").resolve()
     dummy_response = JobResponse(
         status_code=200,
@@ -110,9 +113,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
             camera_in_paths = [in_path / d for d in camera_subdirs]
             for camera_path in camera_in_paths:
                 camera_path.mkdir()
-                shutil.copy(
-                    str(test_vid_path), str(camera_path / test_vid_name)
-                )
+                symlink(test_vid_path, camera_path / test_vid_name)
                 open(camera_path / metadata_file, "w").close()
 
             with tempfile.TemporaryDirectory() as out_temp_dir:
