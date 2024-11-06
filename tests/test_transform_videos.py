@@ -15,7 +15,7 @@ from aind_behavior_video_transformation import (
     BehaviorVideoJobSettings,
     CompressionEnum,
     CompressionRequest,
-    convert_video
+    convert_video,
 )
 
 
@@ -58,18 +58,21 @@ class TestBehaviorVideoJob(unittest.TestCase):
         """Unit test convert video."""
 
         # Equivalent to CompressionEnum.GAMMA_ENCODING
-        arg_set = ("", "-vf "
-        '"scale=out_color_matrix=bt709:out_range=full:sws_dither=none,'
-        "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
-        'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
-        "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dyamics" '
-        "-movflags +faststart+write_colr")
+        arg_set = (
+            "",
+            "-vf "
+            '"scale=out_color_matrix=bt709:out_range=full:sws_dither=none,'
+            "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
+            'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
+            "-preset veryslow -crf 18 -pix_fmt yuv420p "
+            '-metadata author="Allen Institute for Neural Dyamics" '
+            "-movflags +faststart+write_colr",
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            compressed_out_path = convert_video(self.test_vid_path,
-                          temp_path,
-                          arg_set)
+            compressed_out_path = convert_video(
+                self.test_vid_path, temp_path, arg_set
+            )
 
             out_path = temp_path / self.test_vid_name
 
@@ -96,7 +99,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     compression_requested=CompressionRequest(
                         compression_enum=compression_enum
                     ),
-                    parallel_compression=False
+                    parallel_compression=False,
                 )
                 response = helper_run_compression_job(job_settings, mock_time)
                 self.assertEqual(expected_response, response)
