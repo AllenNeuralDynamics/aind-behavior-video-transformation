@@ -187,7 +187,7 @@ def convert_video(
     video_path: Path,
     output_dir: Path,
     arg_set: Optional[Tuple[str, str]],
-    ffmpeg_thread_cnt: int = 0
+    ffmpeg_thread_cnt: int = 0,
 ) -> Path:
     """
     Converts a video to a specified format using ffmpeg.

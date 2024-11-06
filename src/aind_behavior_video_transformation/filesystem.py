@@ -4,8 +4,6 @@ from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
 
-from aind_behavior_video_transformation.transform_videos import convert_video
-
 
 def likely_video_file(file: Path) -> bool:
     """

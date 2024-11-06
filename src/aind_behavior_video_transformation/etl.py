@@ -21,7 +21,7 @@ from aind_behavior_video_transformation.filesystem import (
 )
 from aind_behavior_video_transformation.transform_videos import (
     CompressionRequest,
-    convert_video
+    convert_video,
 )
 
 
@@ -50,8 +50,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         description="Run compression in parallel or sequentially.",
     )
     ffmpeg_thread_cnt: int = Field(
-        default=0,
-        description="Number of threads per ffmpeg compression job."
+        default=0, description="Number of threads per ffmpeg compression job."
     )
 
 
@@ -76,7 +75,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
     def _run_compression(
         self,
-        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]]
+        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
     ) -> None:
         """
         Runs CompressionRequests at the specified paths.
@@ -87,8 +86,11 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             num_jobs = len(convert_video_args)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
                 jobs = [
-                    executor.submit(convert_video, *params,
-                                    self.job_settings.ffmpeg_thread_cnt)
+                    executor.submit(
+                        convert_video,
+                        *params,
+                        self.job_settings.ffmpeg_thread_cnt,
+                    )
                     for params in convert_video_args
                 ]
                 for job in as_completed(jobs):

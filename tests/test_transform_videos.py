@@ -43,9 +43,6 @@ def helper_run_compression_job(job_settings, mock_time):
 class TestBehaviorVideoJob(unittest.TestCase):
     """Test methods in BehaviorVideoJob class."""
 
-    # NOTE:
-    # Test suite does not run yet.
-    # Resolving lint errors first.
     test_data_path = Path("tests/test_video_in_dir").resolve()
     dummy_response = JobResponse(
         status_code=200,
