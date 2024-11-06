@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from time import time
 from typing import List, Optional, Tuple, Union
@@ -20,6 +21,7 @@ from aind_behavior_video_transformation.filesystem import (
 )
 from aind_behavior_video_transformation.transform_videos import (
     CompressionRequest,
+    convert_video
 )
 
 
@@ -43,6 +45,14 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
+    parallel_compression: bool = Field(
+        default=True,
+        description="Run compression in parallel or sequentially.",
+    )
+    ffmpeg_thread_cnt: int = Field(
+        default=0,
+        description="Number of threads per ffmpeg compression job."
+    )
 
 
 class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
@@ -63,6 +73,33 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     -------
     run_job() -> JobResponse
     """
+
+    def _run_compression(
+        self,
+        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]]
+    ) -> None:
+        """
+        Runs CompressionRequests at the specified paths.
+        """
+
+        if self.job_settings.parallel_compression:
+            # ProcessPool implementation
+            num_jobs = len(convert_video_args)
+            with ProcessPoolExecutor(max_workers=num_jobs) as executor:
+                jobs = [
+                    executor.submit(convert_video, *params,
+                                    self.job_settings.ffmpeg_thread_cnt)
+                    for params in convert_video_args
+                ]
+                for job in as_completed(jobs):
+                    result = job.result()
+                    logging.info("FFmpeg job completed:", result)
+
+        else:
+            # Execute Serially
+            for params in convert_video_args:
+                convert_video(*params, self.job_settings.ffmpeg_thread_cnt)
+                logging.info("FFmpeg job completed:", result)
 
     def run_job(self) -> JobResponse:
         """
@@ -94,9 +131,11 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         ffmpeg_arg_set = (
             self.job_settings.compression_requested.determine_ffmpeg_arg_set()
         )
-        transform_directory(
+        convert_video_args = transform_directory(
             job_in_dir_path, job_out_dir_path, ffmpeg_arg_set, overrides
         )
+        self._run_compression(convert_video_args)
+
         job_end_time = time()
         return JobResponse(
             status_code=200,
