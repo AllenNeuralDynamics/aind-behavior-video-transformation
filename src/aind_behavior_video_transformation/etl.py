@@ -100,8 +100,8 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         else:
             # Execute Serially
             for params in convert_video_args:
-                convert_video(*params, self.job_settings.ffmpeg_thread_cnt)
-                logging.info("FFmpeg job completed:", result)
+                out_path = convert_video(*params, self.job_settings.ffmpeg_thread_cnt)
+                logging.info(f"FFmpeg job completed: {out_path}")
 
     def run_job(self) -> JobResponse:
         """
