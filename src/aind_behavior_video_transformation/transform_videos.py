@@ -2,14 +2,15 @@
 Module to handle transforming behavior videos
 
 To add a new compression preset:
-1) Define a CompressionEnum: 'CUSTOM_COMPRESSION = 'custom'
-2) Define corresponding FfmpegInputArgs/FfmpegOutputArgs.
+1) Define FfmpegInputArgs/FfmpegOutputArgs.
+2) Define a CompressionEnum: 'NEW_PRESET = 'new_preset'
 3) Add the CompressionEnum to FfmpegArgSet, and build
    (FfmpegInputArgs, FfmpegOutputArgs) tuple:
-   'CUSTOM_COMPRESSION' = (
+   'NEW_PRESET' = (
         FfmpegInputArgs.CUSTOM_INPUT_ARGS,
         FfmpegOutputArgs.CUSTOM_OUTPUT_ARGS,
     )
+FfmpegInputArgs / FfmpegOutputArgs can be prexisitng or newly-defined in (1)
 """
 
 import shlex
@@ -228,7 +229,8 @@ def convert_video(
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
 
     # Set thread count
-    ffmpeg_command.extend(["-threads", str(ffmpeg_thread_cnt)])
+    if ffmpeg_thread_cnt > 0:
+        ffmpeg_command.extend(["-threads", str(ffmpeg_thread_cnt)])
 
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))
