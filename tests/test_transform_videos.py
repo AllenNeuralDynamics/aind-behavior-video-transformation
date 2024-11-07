@@ -148,6 +148,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     compression_requested=CompressionRequest(
                         compression_enum=CompressionEnum.DEFAULT,
                     ),
+                    parallel_compression=True,
                 )
                 response = helper_run_compression_job(job_settings, mock_time)
                 self.assertEqual(dummy_response, response)
