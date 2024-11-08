@@ -123,6 +123,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                         compression_enum=CompressionEnum.DEFAULT,
                     ),
                     parallel_compression=True,
+                    ffmpeg_thread_cnt=4,
                 )
                 response = helper_run_compression_job(job_settings, mock_time)
                 self.assertEqual(dummy_response, response)
