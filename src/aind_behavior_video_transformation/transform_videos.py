@@ -23,6 +23,7 @@ from typing import Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+
 class CompressionEnum(Enum):
     """
     Enum class to define different types of compression requests.
@@ -240,23 +241,17 @@ def convert_video(
     ffmpeg_command.append(str(out_path))
 
     # Capture and return error message if it exists
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='w+', suffix='.log') as stdout_file, \
-         tempfile.NamedTemporaryFile(mode='w+', suffix='.log') as stderr_file:
-        try:
-            subprocess.run(
-                ffmpeg_command,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            return out_path, None
+    try:
+        subprocess.run(
+            ffmpeg_command, check=True, capture_output=True, text=True
+        )
+        return out_path, None
 
-        except CalledProcessError as e:
-            error_msg = (
-                f"FFmpeg conversion failed for {video_path}\n"
-                f"Command: {' '.join(ffmpeg_command)}\n"
-                f"Return code: {e.returncode}\n"
-                f"Error output:\n{e.stderr}\n"
-            )
-            return (out_path, error_msg)
+    except CalledProcessError as e:
+        error_msg = (
+            f"FFmpeg conversion failed for {video_path}\n"
+            f"Command: {' '.join(ffmpeg_command)}\n"
+            f"Return code: {e.returncode}\n"
+            f"Error output:\n{e.stderr}\n"
+        )
+        return (out_path, error_msg)

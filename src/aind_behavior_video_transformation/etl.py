@@ -102,17 +102,20 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         else:
             # Execute serially
             for params in convert_video_args:
-                out_path, error = convert_video(*params,
-                                  self.job_settings.ffmpeg_thread_cnt)
+                out_path, error = convert_video(
+                    *params, self.job_settings.ffmpeg_thread_cnt
+                )
                 if error:
-                        error_traces.append(error)
+                    error_traces.append(error)
                 else:
                     logging.info(f"FFmpeg job completed: {out_path}")
 
         if error_traces:
             for e in error_traces:
                 logging.error(e)
-            raise RuntimeError('One or more Ffmpeg jobs failed. See error logs.')
+            raise RuntimeError(
+                "One or more Ffmpeg jobs failed. See error logs."
+            )
 
     def run_job(self) -> JobResponse:
         """
