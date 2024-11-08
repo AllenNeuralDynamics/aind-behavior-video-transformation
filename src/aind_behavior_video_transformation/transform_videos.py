@@ -190,7 +190,7 @@ def convert_video(
     output_dir: Path,
     arg_set: Optional[Tuple[str, str]],
     ffmpeg_thread_cnt: int = 0,
-) -> tuple[Path, str]:
+) -> tuple[str, Optional[str]]:
     """
     Converts a video to a specified format using ffmpeg.
 
@@ -245,7 +245,7 @@ def convert_video(
         subprocess.run(
             ffmpeg_command, check=True, capture_output=True, text=True
         )
-        return (out_path, "")
+        return (str(out_path), None)
 
     except CalledProcessError as e:
         error_msg = (
@@ -254,4 +254,4 @@ def convert_video(
             f"Return code: {e.returncode}\n"
             f"Error output:\n{e.stderr}\n"
         )
-        return (out_path, error_msg)
+        return (str(out_path), error_msg)
