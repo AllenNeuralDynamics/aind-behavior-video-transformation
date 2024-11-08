@@ -80,9 +80,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         """
         Runs CompressionRequests at the specified paths.
         """
-
+        error_traces = []
         if self.job_settings.parallel_compression:
-            # ProcessPool implementation
+            # Execute in-parallel
             num_jobs = len(convert_video_args)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
                 jobs = [
@@ -94,15 +94,25 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                     for params in convert_video_args
                 ]
                 for job in as_completed(jobs):
-                    result = job.result()
-                    logging.info("FFmpeg job completed:", result)
-
+                    out_path, error = job.result()
+                    if error:
+                        error_traces.append(error)
+                    else:
+                        logging.info(f"FFmpeg job completed: {out_path}")
         else:
-            # Execute Serially
+            # Execute serially
             for params in convert_video_args:
-                out_path = convert_video(*params,
-                                         self.job_settings.ffmpeg_thread_cnt)
-                logging.info(f"FFmpeg job completed: {out_path}")
+                out_path, error = convert_video(*params,
+                                  self.job_settings.ffmpeg_thread_cnt)
+                if error:
+                        error_traces.append(error)
+                else:
+                    logging.info(f"FFmpeg job completed: {out_path}")
+
+        if error_traces:
+            for e in error_traces:
+                logging.error(e)
+            raise RuntimeError('One or more Ffmpeg jobs failed. See error logs.')
 
     def run_job(self) -> JobResponse:
         """
