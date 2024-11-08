@@ -94,21 +94,21 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                     for params in convert_video_args
                 ]
                 for job in as_completed(jobs):
-                    out_path, error = job.result()
-                    if error:
-                        error_traces.append(error)
+                    result = job.result()
+                    if isinstance(result, tuple):
+                        error_traces.append(result[1])
                     else:
-                        logging.info(f"FFmpeg job completed: {out_path}")
+                        logging.info(f"FFmpeg job completed: {result}")
         else:
             # Execute serially
             for params in convert_video_args:
-                out_path, error = convert_video(
+                result = convert_video(
                     *params, self.job_settings.ffmpeg_thread_cnt
                 )
-                if error:
-                    error_traces.append(error)
+                if isinstance(result, tuple):
+                    error_traces.append(result[1])
                 else:
-                    logging.info(f"FFmpeg job completed: {out_path}")
+                    logging.info(f"FFmpeg job completed: {result}")
 
         if error_traces:
             for e in error_traces:

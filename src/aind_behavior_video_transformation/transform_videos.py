@@ -19,7 +19,7 @@ from enum import Enum
 from os import symlink
 from pathlib import Path
 from subprocess import CalledProcessError
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -190,7 +190,7 @@ def convert_video(
     output_dir: Path,
     arg_set: Optional[Tuple[str, str]],
     ffmpeg_thread_cnt: int = 0,
-) -> tuple[str, Optional[str]]:
+) -> Union[str, Tuple[str, str]]:
     """
     Converts a video to a specified format using ffmpeg.
 
@@ -245,7 +245,7 @@ def convert_video(
         subprocess.run(
             ffmpeg_command, check=True, capture_output=True, text=True
         )
-        return (str(out_path), None)
+        return str(out_path)
 
     except CalledProcessError as e:
         error_msg = (
