@@ -1,10 +1,14 @@
 """Tests transform_videos module."""
 
+import logging
+import tempfile
+from contextlib import contextmanager
+
 import shlex
 import subprocess
 import tempfile
 import unittest
-from os import symlink
+from os import symlink, unlink
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -215,6 +219,77 @@ class TestBehaviorVideoJob(unittest.TestCase):
                 self.assertEqual(expected_response, response)
                 self.assertTrue(temp_out_path.joinpath(test_vid_name).exists())
 
+    @contextmanager
+    def capture_logs(self):
+        """
+        Context manager that creates a temporary log file
+        and configures logging to use it.
+        """
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_log:
+            # Configure logging to write to our temporary file
+            file_handler = logging.FileHandler(temp_log.name)
+            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            logging.getLogger().addHandler(file_handler)
+            logging.getLogger().setLevel(logging.DEBUG)
+
+            try:
+                yield temp_log.name
+            finally:
+                # Clean up: restore original handlers and remove temp file
+                file_handler.close()
+                unlink(temp_log.name)
+
+    @patch("aind_behavior_video_transformation.etl.time")
+    def test_serial_log(self, mock_time: MagicMock):
+        """
+        Test errors in parallel execution are logged
+        sequentially. The length of the error message
+        is known to be 9 lines. So non-overlap is tested
+        by checking 'ERROR' does not occur within 9 lines
+        of each instance of 'ERROR'.
+        """
+
+        faulty_req = CompressionRequest(
+            compression_enum=CompressionEnum.USER_DEFINED,
+            user_ffmpeg_input_options = "invalid input args",
+            user_ffmpeg_output_options = "invalid output args",
+        )
+
+        if not self.test_vid_path.is_file():
+            raise FileNotFoundError(f"File not found: {self.test_vid_path}")
+        camera_subdirs = [f"camera{i}" for i in range(1, 3)]
+        with tempfile.TemporaryDirectory() as in_temp_dir:
+            # Prepare input data
+            in_path = Path(in_temp_dir)
+            camera_in_paths = [in_path / d for d in camera_subdirs]
+            for camera_path in camera_in_paths:
+                camera_path.mkdir()
+                symlink(self.test_vid_path, camera_path / self.test_vid_name)
+
+            with tempfile.TemporaryDirectory() as out_temp_dir:
+                out_path = Path(out_temp_dir)
+                job_settings = BehaviorVideoJobSettings(
+                    input_source=in_path,
+                    output_directory=out_path,
+                    compression_requested=faulty_req,
+                    parallel_compression=True,
+                )
+                with self.capture_logs() as log_file:
+                    self.assertRaises(
+                        RuntimeError,
+                        helper_run_compression_job,
+                        job_settings,
+                        mock_time
+                    )
+                    error_blocks = []
+                    with open(log_file, 'r') as f:
+                        for line_num, line in enumerate(f, 1):
+                            if 'ERROR' in line:
+                                error_blocks.append(line_num)
+
+                    for i in range(len(error_blocks) - 1):
+                        error_diff = error_blocks[i + 1] - error_blocks[i]
+                        self.assertTrue(error_diff >= 9)
 
 if __name__ == "__main__":
     unittest.main()
