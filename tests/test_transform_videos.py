@@ -1,13 +1,11 @@
 """Tests transform_videos module."""
 
 import logging
-import tempfile
-from contextlib import contextmanager
-
 import shlex
 import subprocess
 import tempfile
 import unittest
+from contextlib import contextmanager
 from os import symlink, unlink
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -225,10 +223,12 @@ class TestBehaviorVideoJob(unittest.TestCase):
         Context manager that creates a temporary log file
         and configures logging to use it.
         """
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp_log:
+        with tempfile.NamedTemporaryFile(mode="w+", delete=False) as temp_log:
             # Configure logging to write to our temporary file
             file_handler = logging.FileHandler(temp_log.name)
-            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            file_handler.setFormatter(
+                logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+            )
             logging.getLogger().addHandler(file_handler)
             logging.getLogger().setLevel(logging.DEBUG)
 
@@ -251,8 +251,8 @@ class TestBehaviorVideoJob(unittest.TestCase):
 
         faulty_req = CompressionRequest(
             compression_enum=CompressionEnum.USER_DEFINED,
-            user_ffmpeg_input_options = "invalid input args",
-            user_ffmpeg_output_options = "invalid output args",
+            user_ffmpeg_input_options="invalid input args",
+            user_ffmpeg_output_options="invalid output args",
         )
 
         if not self.test_vid_path.is_file():
@@ -279,17 +279,18 @@ class TestBehaviorVideoJob(unittest.TestCase):
                         RuntimeError,
                         helper_run_compression_job,
                         job_settings,
-                        mock_time
+                        mock_time,
                     )
                     error_blocks = []
-                    with open(log_file, 'r') as f:
+                    with open(log_file, "r") as f:
                         for line_num, line in enumerate(f, 1):
-                            if 'ERROR' in line:
+                            if "ERROR" in line:
                                 error_blocks.append(line_num)
 
                     for i in range(len(error_blocks) - 1):
                         error_diff = error_blocks[i + 1] - error_blocks[i]
                         self.assertTrue(error_diff >= 9)
+
 
 if __name__ == "__main__":
     unittest.main()
