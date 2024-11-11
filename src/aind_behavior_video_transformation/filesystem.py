@@ -4,8 +4,6 @@ from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
 
-from aind_behavior_video_transformation.transform_videos import convert_video
-
 
 def likely_video_file(file: Path) -> bool:
     """
@@ -83,7 +81,7 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
 
 def transform_directory(
     input_dir: Path, output_dir: Path, arg_set, overrides=dict()
-) -> None:
+) -> list[tuple[Path, Path, tuple[str, str] | None]]:
     """
     Transforms all video files in a directory and its subdirectories,
     and creates symbolic links for non-video files. Subdirectories are
@@ -105,8 +103,10 @@ def transform_directory(
 
     Returns
     -------
-    None
+    List of tuples containing convert_video arguments.
     """
+
+    convert_video_args = []
     for root, dirs, files in walk(input_dir, followlinks=True):
         root_path = Path(root)
         in_relpath = relpath(root, input_dir)
@@ -122,7 +122,10 @@ def transform_directory(
                 this_arg_set = overrides.get(root_path, arg_set)
                 # File-level overrides take precedence
                 this_arg_set = overrides.get(file_path, this_arg_set)
-                convert_video(file_path, dst_dir, this_arg_set)
+                convert_video_args.append((file_path, dst_dir, this_arg_set))
+
             else:
                 out_path = dst_dir / file_name
                 symlink(file_path, out_path)
+
+    return convert_video_args
