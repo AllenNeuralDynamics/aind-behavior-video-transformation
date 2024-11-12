@@ -44,12 +44,6 @@ Additionally, this package should provide an easy to use interface that:
 
 * Sacrifice the visual fidelity of videos in order to decrease encoding time.
 
-## Usage
- - The BehaviorVideoJob.run_job method in the transform_videos should be the
-   primary method to call for processing video files.
- - On a merge to main, this package will be published as a singularity
-   container, which can easily be run on a SLURM cluster.
-
 ## Brief benchmarks on video compression with CPU-based encoders and GPU-based encoders
 
 A surprising fact is that video encoders implementing the same algorithm, but
@@ -84,6 +78,22 @@ Because the output of this package are permanent video artifacts, the
 compression is lossy, and the intent is to delete the original, taking the CPU
 time to produce the highest quality video possible might well be worth it.
 
+## Usage
+ - The BehaviorVideoJob.run_job method in the transform_videos should be the
+   primary method to call for processing video files.
+ - On a merge to main, this package will be published as a singularity
+   container, which can easily be run on a SLURM cluster.
+
+## Docker build for local testing
+In the same directory as the Dockerfile, run
+```bash
+docker build -t aind-behavior-video-transformation-local .
+```
+
+Now a docker container can be run. You may need to change the mount locations and file permissions:
+```bash
+docker run -v /home/local_videos/input_source:/mnt/input_source -v /home/local_videos/output_directory:/mnt/output_directory aind-behavior-video-transformation-local python -m aind_behavior_video_transformation.etl --job-settings '{"compression_requested": {"compression_enum": "gamma fix colorspace"}, "parallel_compression": true, "input_source": "/mnt/input_source", "output_directory": "/mnt/output_directory"}'
+```
 
 ## Development
 
