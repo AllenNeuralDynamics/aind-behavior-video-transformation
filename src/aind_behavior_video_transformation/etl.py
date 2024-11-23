@@ -83,6 +83,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         error_traces = []
         if self.job_settings.parallel_compression:
             # Execute in-parallel
+            if len(convert_video_args) == 0:
+                return
+
             num_jobs = len(convert_video_args)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
                 jobs = [
