@@ -57,7 +57,7 @@ class FfmpegOutputArgs(Enum):
         "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
         'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
         "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dyamics" '
+        '-metadata author="Allen Institute for Neural Dynamics" '
         "-movflags +faststart+write_colr"
     )
 
@@ -71,14 +71,14 @@ class FfmpegOutputArgs(Enum):
         "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
         'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
         "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dyamics" '
+        '-metadata author="Allen Institute for Neural Dynamics" '
         "-movflags +faststart+write_colr"
     )
     NO_GAMMA_ENCODING = (
         "-vf "
         '"scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
         "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dyamics" '
+        '-metadata author="Allen Institute for Neural Dynamics" '
         "-movflags +faststart+write_colr"
     )
     NONE = ""
