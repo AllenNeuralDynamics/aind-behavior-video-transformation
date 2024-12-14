@@ -74,6 +74,15 @@ class FfmpegOutputArgs(Enum):
         '-metadata author="Allen Institute for Neural Dyamics" '
         "-movflags +faststart+write_colr"
     )
+    GAMMA_ENCODING_FIX_INPUT_COLOR_NO_COMPRESSION = (
+        "-vf "
+        '"setparams=color_primaries=bt709:color_trc=linear:colorspace=bt709,'
+        "scale=out_color_matrix=bt709:out_range=full:sws_dither=none,"
+        "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
+        'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v copy '
+        '-metadata author="Allen Institute for Neural Dynamics" '
+        "-movflags +faststart+write_colr"
+    )
     NO_GAMMA_ENCODING = (
         "-vf "
         '"scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
@@ -98,6 +107,10 @@ class FfmpegArgSet(Enum):
     GAMMA_ENCODING_FIX_COLORSPACE = (
         FfmpegInputArgs.NONE,
         FfmpegOutputArgs.GAMMA_ENCODING_FIX_INPUT_COLOR,
+    )
+    GAMMA_ENCODING_FIX_COLORSPACE_NO_COMPRESSION = (
+        FfmpegInputArgs.NONE,
+        FfmpegOutputArgs.GAMMA_ENCODING_FIX_INPUT_COLOR_NO_COMPRESSION,
     )
     NO_GAMMA_ENCODING = (
         FfmpegInputArgs.NONE,
