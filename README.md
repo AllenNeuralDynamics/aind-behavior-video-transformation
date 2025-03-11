@@ -81,8 +81,8 @@ time to produce the highest quality video possible might well be worth it.
 ## Usage
  - The BehaviorVideoJob.run_job method in the transform_videos should be the
    primary method to call for processing video files.
- - On a merge to main, this package will be published as a singularity
-   container, which can easily be run on a SLURM cluster.
+ - On a merge to main, this package will be published as a docker
+   image, which can easily be run on a SLURM cluster.
 
 ## Docker build for local testing
 In the same directory as the Dockerfile, run
