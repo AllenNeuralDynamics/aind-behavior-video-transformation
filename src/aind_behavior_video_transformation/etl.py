@@ -21,6 +21,7 @@ from aind_behavior_video_transformation.filesystem import (
 )
 from aind_behavior_video_transformation.transform_videos import (
     CompressionRequest,
+    CompressionEnum,
     convert_video,
 )
 
@@ -79,13 +80,19 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     ) -> None:
         """
         Runs CompressionRequests at the specified paths.
+        If a compression job fails, retries with no compression setting.
         """
-        error_traces = []
+        if len(convert_video_args) == 0:
+            return
+
+        # Get no compression fallback arguments
+        no_compression_request = CompressionRequest(
+            compression_enum=CompressionEnum.NO_COMPRESSION
+        )
+        no_compression_args = no_compression_request.determine_ffmpeg_arg_set()
+
         if self.job_settings.parallel_compression:
             # Execute in-parallel
-            if len(convert_video_args) == 0:
-                return
-
             num_jobs = len(convert_video_args)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
                 jobs = [
@@ -96,12 +103,47 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                     )
                     for params in convert_video_args
                 ]
+
+                failed_jobs = []
                 for job in as_completed(jobs):
                     result = job.result()
                     if isinstance(result, tuple):
-                        error_traces.append(result[1])
+                        # Job failed, store the original parameters for retry
+                        job_index = jobs.index(job)
+                        original_params = convert_video_args[job_index]
+                        failed_jobs.append(original_params)
+                        logging.warning(
+                            f"FFmpeg job failed for {original_params[0]}, "
+                            f"will retry with no compression. Error: {result[1]}"
+                        )
                     else:
                         logging.info(f"FFmpeg job completed: {result}")
+
+                # Retry failed jobs with no compression
+                if failed_jobs:
+                    logging.info(f"Retrying {len(failed_jobs)} failed jobs with no compression")
+                    retry_jobs = [
+                        executor.submit(
+                            convert_video,
+                            params[0],  # video_path
+                            params[1],  # output_dir
+                            no_compression_args,  # use no compression fallback
+                            self.job_settings.ffmpeg_thread_cnt,
+                        )
+                        for params in failed_jobs
+                    ]
+
+                    for job in as_completed(retry_jobs):
+                        result = job.result()
+                        if isinstance(result, tuple):
+                            # Even no compression failed
+                            logging.error(f"No compression fallback also failed: {result[1]}")
+                            raise RuntimeError(
+                                f"Both original compression and no compression fallback failed for job. "
+                                f"Error: {result[1]}"
+                            )
+                        else:
+                            logging.info(f"Fallback FFmpeg job completed: {result}")
         else:
             # Execute serially
             for params in convert_video_args:
@@ -109,16 +151,30 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                     *params, self.job_settings.ffmpeg_thread_cnt
                 )
                 if isinstance(result, tuple):
-                    error_traces.append(result[1])
+                    # Job failed, retry with no compression
+                    logging.warning(
+                        f"FFmpeg job failed for {params[0]}, "
+                        f"retrying with no compression. Error: {result[1]}"
+                    )
+
+                    retry_result = convert_video(
+                        params[0],  # video_path
+                        params[1],  # output_dir
+                        no_compression_args,  # use no compression fallback
+                        self.job_settings.ffmpeg_thread_cnt,
+                    )
+
+                    if isinstance(retry_result, tuple):
+                        # Even no compression failed
+                        logging.error(f"No compression fallback also failed: {retry_result[1]}")
+                        raise RuntimeError(
+                            f"Both original compression and no compression fallback failed for {params[0]}. "
+                            f"Error: {retry_result[1]}"
+                        )
+                    else:
+                        logging.info(f"Fallback FFmpeg job completed: {retry_result}")
                 else:
                     logging.info(f"FFmpeg job completed: {result}")
-
-        if error_traces:
-            for e in error_traces:
-                logging.error(e)
-            raise RuntimeError(
-                "One or more Ffmpeg jobs failed. See error logs."
-            )
 
     def run_job(self) -> JobResponse:
         """
