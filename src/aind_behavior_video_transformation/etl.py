@@ -20,8 +20,8 @@ from aind_behavior_video_transformation.filesystem import (
     transform_directory,
 )
 from aind_behavior_video_transformation.transform_videos import (
-    CompressionRequest,
     CompressionEnum,
+    CompressionRequest,
     convert_video,
 )
 
@@ -74,7 +74,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     run_job() -> JobResponse
     """
 
-    def _run_compression(
+    def _run_compression(  # noqa: C901
         self,
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
     ) -> None:
@@ -121,7 +121,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
                 # Retry failed jobs with no compression
                 if failed_jobs:
-                    logging.info(f"Retrying {len(failed_jobs)} failed jobs with no compression")
+                    logging.info(
+                        f"Retrying {len(failed_jobs)} failed jobs with no compression"
+                    )
                     retry_jobs = [
                         executor.submit(
                             convert_video,
@@ -137,13 +139,17 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                         result = job.result()
                         if isinstance(result, tuple):
                             # Even no compression failed
-                            logging.error(f"No compression fallback also failed: {result[1]}")
+                            logging.error(
+                                f"No compression fallback also failed: {result[1]}"
+                            )
                             raise RuntimeError(
                                 f"Both original compression and no compression fallback failed for job. "
                                 f"Error: {result[1]}"
                             )
                         else:
-                            logging.info(f"Fallback FFmpeg job completed: {result}")
+                            logging.info(
+                                f"Fallback FFmpeg job completed: {result}"
+                            )
         else:
             # Execute serially
             for params in convert_video_args:
@@ -166,13 +172,17 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
                     if isinstance(retry_result, tuple):
                         # Even no compression failed
-                        logging.error(f"No compression fallback also failed: {retry_result[1]}")
+                        logging.error(
+                            f"No compression fallback also failed: {retry_result[1]}"
+                        )
                         raise RuntimeError(
                             f"Both original compression and no compression fallback failed for {params[0]}. "
                             f"Error: {retry_result[1]}"
                         )
                     else:
-                        logging.info(f"Fallback FFmpeg job completed: {retry_result}")
+                        logging.info(
+                            f"Fallback FFmpeg job completed: {retry_result}"
+                        )
                 else:
                     logging.info(f"FFmpeg job completed: {result}")
 

@@ -16,7 +16,6 @@ FfmpegInputArgs / FfmpegOutputArgs can be prexisitng or newly-defined in (1)
 import shlex
 import subprocess
 from enum import Enum
-from os import symlink
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Optional, Tuple, Union
