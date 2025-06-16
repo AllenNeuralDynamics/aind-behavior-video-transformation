@@ -1,8 +1,9 @@
 """Module for handling file discovery to transform videos."""
 
-from os import symlink, walk
+from os import walk
 from os.path import relpath
 from pathlib import Path
+import shutil
 
 
 def likely_video_file(file: Path) -> bool:
@@ -84,15 +85,14 @@ def transform_directory(
 ) -> list[tuple[Path, Path, tuple[str, str] | None]]:
     """
     Transforms all video files in a directory and its subdirectories,
-    and creates symbolic links for non-video files. Subdirectories are
-    created as needed.
+    and copies non-video files. Subdirectories are created as needed.
 
     Parameters
     ----------
     input_dir : Path
         The directory containing the input files.
     output_dir : Path
-        The directory where the transformed files and symbolic links will be
+        The directory where the transformed files and copied files will be
         saved.
     arg_set : Any
         The set of arguments to be used for video transformation.
@@ -116,16 +116,16 @@ def transform_directory(
             out_path.mkdir(parents=True, exist_ok=True)
 
         for file_name in files:
-            file_path = Path(root) / file_name
+            file_path = root_path / file_name
+            out_path = dst_dir / file_name
+
             if likely_video_file(file_path):
                 # If the parent directory has an override, use that
                 this_arg_set = overrides.get(root_path, arg_set)
                 # File-level overrides take precedence
                 this_arg_set = overrides.get(file_path, this_arg_set)
                 convert_video_args.append((file_path, dst_dir, this_arg_set))
-
             else:
-                out_path = dst_dir / file_name
-                symlink(file_path, out_path)
+                shutil.copy2(file_path, out_path)
 
     return convert_video_args
