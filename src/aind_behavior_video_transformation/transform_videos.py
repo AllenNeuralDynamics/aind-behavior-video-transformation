@@ -16,7 +16,6 @@ FfmpegInputArgs / FfmpegOutputArgs can be prexisitng or newly-defined in (1)
 import shlex
 import subprocess
 from enum import Enum
-from os import symlink
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Optional, Tuple, Union
@@ -81,6 +80,14 @@ class FfmpegOutputArgs(Enum):
         '-metadata author="Allen Institute for Neural Dynamics" '
         "-movflags +faststart+write_colr"
     )
+
+    # Copy video stream without re-encoding, just convert container to MP4
+    COPY_STREAMS = (
+        "-c:v copy -c:a copy "
+        '-metadata author="Allen Institute for Neural Dynamics" '
+        "-movflags +faststart"
+    )
+
     NONE = ""
 
 
@@ -102,6 +109,10 @@ class FfmpegArgSet(Enum):
     NO_GAMMA_ENCODING = (
         FfmpegInputArgs.NONE,
         FfmpegOutputArgs.NO_GAMMA_ENCODING,
+    )
+    NO_COMPRESSION = (
+        FfmpegInputArgs.NONE,
+        FfmpegOutputArgs.COPY_STREAMS,
     )
 
 
@@ -149,7 +160,6 @@ class CompressionRequest(BaseModel):
 
         Notes
         -----
-        - If `compression_enum` is `NO_COMPRESSION`, the method returns None.
         - If `compression_enum` is `USER_DEFINED`, the method returns
             user-defined FFmpeg options.
         - For other compression types, the method uses predefined
@@ -158,16 +168,13 @@ class CompressionRequest(BaseModel):
             `GAMMA_ENCODING`.
         """
         comp_req = self.compression_enum
-        # Handle two special cases
-        if comp_req == CompressionEnum.NO_COMPRESSION:
-            arg_set = None
-        elif comp_req == CompressionEnum.USER_DEFINED:
+        # Handle special case for user-defined options
+        if comp_req == CompressionEnum.USER_DEFINED:
             arg_set = (
                 self.user_ffmpeg_input_options,
                 self.user_ffmpeg_output_options,
             )
-
-        # If not one of the two special cases, use the enum values
+        # All other cases use predefined ffmpeg argument sets
         else:
             # If default, set compression to gamma
             if comp_req == CompressionEnum.DEFAULT:
@@ -188,7 +195,7 @@ class CompressionRequest(BaseModel):
 def convert_video(
     video_path: Path,
     output_dir: Path,
-    arg_set: Optional[Tuple[str, str]],
+    arg_set: Tuple[str, str],
     ffmpeg_thread_cnt: int = 0,
 ) -> Union[str, Tuple[str, str]]:
     """
@@ -200,9 +207,8 @@ def convert_video(
         The path to the input video file.
     output_dir : Path
         The destination directory where the converted video will be saved.
-    arg_set : tuple or None
-        A tuple containing input and output arguments for ffmpeg. If None, a
-        symlink to the original video is created.
+    arg_set : tuple
+        A tuple containing input and output arguments for ffmpeg.
     ffmpeg_thread_cnt : set number of ffmpeg threads
 
     Returns
@@ -218,11 +224,6 @@ def convert_video(
     """
 
     out_path = output_dir / f"{video_path.stem}.mp4"  # noqa: E501
-
-    # Trivial Case, do nothing
-    if arg_set is None:
-        symlink(video_path, out_path)
-        return out_path
 
     input_args = arg_set[0]
     output_args = arg_set[1]

@@ -48,7 +48,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
     test_data_path = Path("tests/test_video_in_dir").resolve()
     dummy_response = JobResponse(
         status_code=200,
-        message="Job finished in: 1",
+        message="Job finished in: 1.00 seconds.",
         data=None,
     )
     test_vid_name = "clip.mp4"
@@ -174,7 +174,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
                             out_path.joinpath(d, test_vid_name).exists()
                         )
                     overriden_out = out_path / override_dir / test_vid_name
-                    self.assertTrue(overriden_out.is_symlink())
+                    self.assertTrue(overriden_out.is_file())
 
     @patch("aind_behavior_video_transformation.etl.time")
     def test_run_job_missing_colorspace(self, mock_time: MagicMock):
