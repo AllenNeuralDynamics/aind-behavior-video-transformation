@@ -48,7 +48,7 @@ class TestBehaviorVideoJob(unittest.TestCase):
     test_data_path = Path("tests/test_video_in_dir").resolve()
     dummy_response = JobResponse(
         status_code=200,
-        message="Job finished in: 1",
+        message="Job finished in: 1.00 seconds.",
         data=None,
     )
     test_vid_name = "clip.mp4"
