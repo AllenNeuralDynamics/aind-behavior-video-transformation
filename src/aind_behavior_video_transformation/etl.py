@@ -52,6 +52,10 @@ class BehaviorVideoJobSettings(BasicJobSettings):
     ffmpeg_thread_cnt: int = Field(
         default=0, description="Number of threads per ffmpeg compression job."
     )
+    file_filter: Optional[str] = Field(
+        default=None,
+        description=("If set, filter file paths based on regex pattern."),
+    )
 
 
 class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
@@ -150,8 +154,13 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         ffmpeg_arg_set = (
             self.job_settings.compression_requested.determine_ffmpeg_arg_set()
         )
+        file_filter = self.job_settings.file_filter
         convert_video_args = transform_directory(
-            job_in_dir_path, job_out_dir_path, ffmpeg_arg_set, overrides
+            job_in_dir_path,
+            job_out_dir_path,
+            ffmpeg_arg_set,
+            overrides,
+            file_filter,
         )
         self._run_compression(convert_video_args)
 

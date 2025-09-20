@@ -1,8 +1,10 @@
 """Module for handling file discovery to transform videos."""
 
+import re
 from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
+from typing import Optional
 
 
 def likely_video_file(file: Path) -> bool:
@@ -80,7 +82,11 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
 
 
 def transform_directory(
-    input_dir: Path, output_dir: Path, arg_set, overrides=dict()
+    input_dir: Path,
+    output_dir: Path,
+    arg_set,
+    overrides=dict(),
+    file_filter_pattern: Optional[str] = None,
 ) -> list[tuple[Path, Path, tuple[str, str] | None]]:
     """
     Transforms all video files in a directory and its subdirectories,
@@ -100,6 +106,8 @@ def transform_directory(
         A dictionary containing overrides for specific directories or files.
         Keys are Paths and values are argument sets. Default is an empty
         dictionary.
+    file_filter_pattern : str | None
+        If set, will filter file names based on this pattern. Default is None.
 
     Returns
     -------
@@ -117,6 +125,10 @@ def transform_directory(
 
         for file_name in files:
             file_path = Path(root) / file_name
+            if file_filter_pattern and not re.match(
+                file_filter_pattern, file_name
+            ):
+                continue
             if likely_video_file(file_path):
                 # If the parent directory has an override, use that
                 this_arg_set = overrides.get(root_path, arg_set)
