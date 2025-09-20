@@ -54,7 +54,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
     )
     file_filter: Optional[str] = Field(
         default=None,
-        description=("If set, filter file paths based on regex pattern."),
+        description="If set, filter file paths based on regex pattern.",
     )
 
 
