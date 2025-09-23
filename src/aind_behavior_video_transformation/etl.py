@@ -52,7 +52,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
     ffmpeg_thread_cnt: int = Field(
         default=0, description="Number of threads per ffmpeg compression job."
     )
-    file_filter: Optional[str] = Field(
+    file_filter: str | None = Field(
         default=None,
         description="If set, filter file paths based on regex pattern.",
     )

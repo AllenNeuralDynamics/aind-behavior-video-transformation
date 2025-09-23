@@ -107,7 +107,8 @@ def transform_directory(
         Keys are Paths and values are argument sets. Default is an empty
         dictionary.
     file_filter_pattern : str | None
-        If set, will filter file names based on this pattern. Default is None.
+        If set, will filter file names based on this regex pattern.
+        Default is None.
 
     Returns
     -------
@@ -125,7 +126,7 @@ def transform_directory(
 
         for file_name in files:
             file_path = Path(root) / file_name
-            if file_filter_pattern and not re.match(
+            if file_filter_pattern and not re.search(
                 file_filter_pattern, file_name
             ):
                 continue
