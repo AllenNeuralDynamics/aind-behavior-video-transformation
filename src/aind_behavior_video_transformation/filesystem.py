@@ -4,7 +4,6 @@ import re
 from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
-from typing import Optional
 
 
 def likely_video_file(file: Path) -> bool:
@@ -86,7 +85,7 @@ def transform_directory(
     output_dir: Path,
     arg_set,
     overrides=dict(),
-    file_filter_pattern: Optional[str] = None,
+    file_filter_pattern: str | None = None,
 ) -> list[tuple[Path, Path, tuple[str, str] | None]]:
     """
     Transforms all video files in a directory and its subdirectories,
