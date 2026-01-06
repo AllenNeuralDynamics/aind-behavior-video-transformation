@@ -138,6 +138,8 @@ def transform_directory(
 
             else:
                 out_path = dst_dir / file_name
+                if out_path.exists():
+                    continue
                 symlink(file_path, out_path)
 
     return convert_video_args
