@@ -4,6 +4,7 @@ import re
 from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
+import logging
 
 
 def likely_video_file(file: Path) -> bool:
@@ -139,6 +140,7 @@ def transform_directory(
             else:
                 out_path = dst_dir / file_name
                 if out_path.exists():
+                    logging.warning(f"Output path {out_path} already exists!")
                     continue
                 symlink(file_path, out_path)
 
