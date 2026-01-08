@@ -1,5 +1,6 @@
 """Module for handling file discovery to transform videos."""
 
+import logging
 import re
 from os import symlink, walk
 from os.path import relpath
@@ -138,6 +139,9 @@ def transform_directory(
 
             else:
                 out_path = dst_dir / file_name
+                if out_path.exists():
+                    logging.warning(f"Output path {out_path} already exists!")
+                    continue
                 symlink(file_path, out_path)
 
     return convert_video_args
