@@ -1,10 +1,10 @@
 """Module for handling file discovery to transform videos."""
 
+import logging
 import re
 from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
-import logging
 
 
 def likely_video_file(file: Path) -> bool:
