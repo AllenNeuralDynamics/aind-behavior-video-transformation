@@ -155,14 +155,12 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             return
 
         formatted = [
-            _format_ffmpeg_error(video_path, exc)
-            for video_path, exc in errors
+            _format_ffmpeg_error(video_path, exc) for video_path, exc in errors
         ]
         for block in formatted:
             logger.error(block)
         raise RuntimeError(
-            f"{len(errors)} ffmpeg job(s) failed:\n\n"
-            + "\n\n".join(formatted)
+            f"{len(errors)} ffmpeg job(s) failed:\n\n" + "\n\n".join(formatted)
         )
 
     def run_job(self) -> JobResponse:

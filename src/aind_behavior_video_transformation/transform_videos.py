@@ -1,16 +1,9 @@
-"""
-Module to handle transforming behavior videos
+"""Module to handle transforming behavior videos.
 
-To add a new compression preset:
-1) Define FfmpegInputArgs/FfmpegOutputArgs.
-2) Define a CompressionEnum: 'NEW_PRESET = 'new_preset'
-3) Add the CompressionEnum to FfmpegArgSet, and build
-   (FfmpegInputArgs, FfmpegOutputArgs) tuple:
-   'NEW_PRESET' = (
-        FfmpegInputArgs.CUSTOM_INPUT_ARGS,
-        FfmpegOutputArgs.CUSTOM_OUTPUT_ARGS,
-    )
-FfmpegInputArgs / FfmpegOutputArgs can be prexisitng or newly-defined in (1)
+Encoding profiles are provided by ``aind-video-utils``.  This module adds
+the ETL-layer concepts that don't map to encoding profiles:
+``NO_COMPRESSION`` (symlink), ``USER_DEFINED`` (arbitrary ffmpeg strings),
+and the ``CompressionRequest`` Pydantic model used by job settings.
 """
 
 import logging
@@ -21,6 +14,11 @@ from os import symlink
 from pathlib import Path
 from typing import Optional, Tuple
 
+from aind_video_utils.encoding import (
+    OFFLINE_8BIT,
+    EncodingProfile,
+    with_setparams,
+)
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -29,7 +27,6 @@ logger = logging.getLogger(__name__)
 class CompressionEnum(Enum):
     """
     Enum class to define different types of compression requests.
-    Details of requests found in FfmpegArgSet.
     """
 
     DEFAULT = "default"
@@ -40,71 +37,18 @@ class CompressionEnum(Enum):
     NO_COMPRESSION = "no compression"
 
 
-class FfmpegInputArgs(Enum):
-    """
-    Input arguments referenced inside FfmpegArgSet
-    """
-
-    NONE = ""
-
-
-class FfmpegOutputArgs(Enum):
-    """
-    Output arguments referenced inside FfmpegArgSet
-    """
-
-    GAMMA_ENCODING = (
-        "-vf "
-        '"scale=out_color_matrix=bt709:out_range=full:sws_dither=none,'
-        "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
-        'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
-        "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dynamics" '
-        "-movflags +faststart+write_colr"
-    )
-
-    # Many video files are missing colorspace metadata, which is necessary for
-    # correct gamma conversion. This option applies commonly used values at
-    # AIND, which are assumed to be correct for most videos.
-    GAMMA_ENCODING_FIX_INPUT_COLOR = (
-        "-vf "
-        '"setparams=color_primaries=bt709:color_trc=linear:colorspace=bt709,'
-        "scale=out_color_matrix=bt709:out_range=full:sws_dither=none,"
-        "format=yuv420p10le,colorspace=ispace=bt709:all=bt709:dither=none,"
-        'scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
-        "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dynamics" '
-        "-movflags +faststart+write_colr"
-    )
-    NO_GAMMA_ENCODING = (
-        "-vf "
-        '"scale=out_range=tv:sws_dither=none,format=yuv420p" -c:v libx264 '
-        "-preset veryslow -crf 18 -pix_fmt yuv420p "
-        '-metadata author="Allen Institute for Neural Dynamics" '
-        "-movflags +faststart+write_colr"
-    )
-    NONE = ""
-
-
-class FfmpegArgSet(Enum):
-    """
-    Define different ffmpeg params to be used for video compression.
-    Two-tuple with first element as input params and second element as output
-    params.
-    """
-
-    GAMMA_ENCODING = (
-        FfmpegInputArgs.NONE,
-        FfmpegOutputArgs.GAMMA_ENCODING,
-    )
-    GAMMA_ENCODING_FIX_COLORSPACE = (
-        FfmpegInputArgs.NONE,
-        FfmpegOutputArgs.GAMMA_ENCODING_FIX_INPUT_COLOR,
-    )
-    NO_GAMMA_ENCODING = (
-        FfmpegInputArgs.NONE,
-        FfmpegOutputArgs.NO_GAMMA_ENCODING,
-    )
+# Map standard compression presets to aind-video-utils encoding profiles.
+# ``DEFAULT`` aliases ``GAMMA_ENCODING`` so callers can omit a preset.
+_COMPRESSION_PROFILES: dict[CompressionEnum, EncodingProfile] = {
+    CompressionEnum.DEFAULT: OFFLINE_8BIT,
+    CompressionEnum.GAMMA_ENCODING: OFFLINE_8BIT,
+    CompressionEnum.GAMMA_ENCODING_FIX_COLORSPACE: with_setparams(
+        OFFLINE_8BIT
+    ),
+    CompressionEnum.NO_GAMMA_ENCODING: OFFLINE_8BIT.replace(
+        video_filters="scale=out_range=tv:sws_dither=none,format=yuv420p",
+    ),
+}
 
 
 class CompressionRequest(BaseModel):
@@ -154,37 +98,25 @@ class CompressionRequest(BaseModel):
         - If `compression_enum` is `NO_COMPRESSION`, the method returns None.
         - If `compression_enum` is `USER_DEFINED`, the method returns
             user-defined FFmpeg options.
-        - For other compression types, the method uses predefined
-            FFmpeg argument sets.
+        - For other compression types, the method uses aind-video-utils
+            encoding profiles.
         - If `compression_enum` is `DEFAULT`, it defaults to
             `GAMMA_ENCODING`.
         """
         comp_req = self.compression_enum
-        # Handle two special cases
         if comp_req == CompressionEnum.NO_COMPRESSION:
-            arg_set = None
-        elif comp_req == CompressionEnum.USER_DEFINED:
-            arg_set = (
-                self.user_ffmpeg_input_options,
-                self.user_ffmpeg_output_options,
+            return None
+        if comp_req == CompressionEnum.USER_DEFINED:
+            return (
+                self.user_ffmpeg_input_options or "",
+                self.user_ffmpeg_output_options or "",
             )
 
-        # If not one of the two special cases, use the enum values
-        else:
-            # If default, set compression to gamma
-            if comp_req == CompressionEnum.DEFAULT:
-                compression_preset = CompressionEnum.GAMMA_ENCODING
-            else:
-                compression_preset = self.compression_enum
-
-            # Resolve two levels of indirection here
-            # FfmpegArgSet -> (FfmpegInputArgs, FfmpegOutputArgs)
-            # (FfmpegInputArgs, FfmpegOutputArgs)
-            #      -> (in_args str, out_args str)
-            arg_set_enum = FfmpegArgSet[compression_preset.name].value
-            arg_set = (arg_set_enum[0].value, arg_set_enum[1].value)
-
-        return arg_set
+        profile = _COMPRESSION_PROFILES[comp_req]
+        return (
+            shlex.join(profile.ffmpeg_input_args()),
+            shlex.join(profile.ffmpeg_output_args()),
+        )
 
 
 def convert_video(
@@ -242,7 +174,5 @@ def convert_video(
         ffmpeg_command.extend(shlex.split(output_args))
     ffmpeg_command.append(str(out_path))
 
-    subprocess.run(
-        ffmpeg_command, check=True, capture_output=True, text=True
-    )
+    subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
     return str(out_path)
