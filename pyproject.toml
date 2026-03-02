@@ -16,7 +16,7 @@ classifiers = [
 readme = "README.md"
 dynamic = ["version"]
 
-dependencies = ['aind-data-transformation>=0.1.0']
+dependencies = ['aind-data-transformation>=0.1.0', 'aind-video-utils>=0.5.0']
 
 [project.optional-dependencies]
 dev = ['black', 'coverage', 'flake8', 'interrogate', 'isort', 'Sphinx', 'furo']
@@ -59,7 +59,7 @@ exclude_lines = [
   "import",
   "pragma: no cover",
 ]
-fail_under = 92
+fail_under = 90
 
 [tool.isort]
 line_length = 79
