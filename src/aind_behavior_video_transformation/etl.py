@@ -1,9 +1,11 @@
 """Module that defines the ETL class for behavior video transformations."""
 
 import logging
+import shlex
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from subprocess import CalledProcessError
 from time import time
 from typing import List, Optional, Tuple, Union
 
@@ -23,6 +25,25 @@ from aind_behavior_video_transformation.transform_videos import (
     CompressionRequest,
     convert_video,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
+    """Format an ffmpeg ``CalledProcessError`` as a single log record body.
+
+    The format keeps each piece on its own line so ffmpeg stderr is
+    clearly visible to readers and to log aggregators.
+    """
+    stderr = (exc.stderr or "(no stderr captured)").rstrip("\n")
+    return (
+        f"FFmpeg conversion failed for {video_path}\n"
+        f"Command: {shlex.join(exc.cmd)}\n"
+        f"Return code: {exc.returncode}\n"
+        f"--- ffmpeg stderr ---\n"
+        f"{stderr}\n"
+        f"--- end stderr ---"
+    )
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
@@ -84,7 +105,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         """
         Runs CompressionRequests at the specified paths.
         """
-        error_traces = []
+        errors: list[tuple[Path, CalledProcessError]] = []
         if self.job_settings.parallel_compression:
             # Execute in-parallel
             if len(convert_video_args) == 0:
@@ -92,34 +113,38 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
             num_jobs = len(convert_video_args)
             with ProcessPoolExecutor(max_workers=num_jobs) as executor:
-                jobs = [
+                futures = {
                     executor.submit(
                         convert_video,
                         *params,
                         self.job_settings.ffmpeg_thread_cnt,
-                    )
+                    ): params
                     for params in convert_video_args
-                ]
-                for job in as_completed(jobs):
-                    result = job.result()
-                    if isinstance(result, tuple):
-                        error_traces.append(result[1])
+                }
+                for future in as_completed(futures):
+                    video_path = futures[future][0]
+                    try:
+                        result = future.result()
+                    except CalledProcessError as exc:
+                        errors.append((video_path, exc))
                     else:
-                        logging.info(f"FFmpeg job completed: {result}")
+                        logger.info("FFmpeg job completed: %s", result)
         else:
             # Execute serially
             for params in convert_video_args:
-                result = convert_video(
-                    *params, self.job_settings.ffmpeg_thread_cnt
-                )
-                if isinstance(result, tuple):
-                    error_traces.append(result[1])
+                video_path = params[0]
+                try:
+                    result = convert_video(
+                        *params, self.job_settings.ffmpeg_thread_cnt
+                    )
+                except CalledProcessError as exc:
+                    errors.append((video_path, exc))
                 else:
-                    logging.info(f"FFmpeg job completed: {result}")
+                    logger.info("FFmpeg job completed: %s", result)
 
-        if error_traces:
-            for e in error_traces:
-                logging.error(e)
+        if errors:
+            for video_path, exc in errors:
+                logger.error(_format_ffmpeg_error(video_path, exc))
             raise RuntimeError(
                 "One or more Ffmpeg jobs failed. See error logs."
             )
