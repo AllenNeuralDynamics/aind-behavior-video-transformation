@@ -13,15 +13,17 @@ To add a new compression preset:
 FfmpegInputArgs / FfmpegOutputArgs can be prexisitng or newly-defined in (1)
 """
 
+import logging
 import shlex
 import subprocess
 from enum import Enum
 from os import symlink
 from pathlib import Path
-from subprocess import CalledProcessError
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class CompressionEnum(Enum):
@@ -190,7 +192,7 @@ def convert_video(
     output_dir: Path,
     arg_set: Optional[Tuple[str, str]],
     ffmpeg_thread_cnt: int = 0,
-) -> Union[str, Tuple[str, str]]:
+) -> str:
     """
     Converts a video to a specified format using ffmpeg.
 
@@ -207,32 +209,32 @@ def convert_video(
 
     Returns
     -------
-    Path
+    str
         The path to the converted video file.
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        If ffmpeg exits with a non-zero return code.  The exception's
+        ``cmd``, ``returncode``, and ``stderr`` attributes carry the
+        full failure context for the caller to log.
 
     Notes
     -----
-    - The function uses ffmpeg for video conversion.
     - If `arg_set` is None, the function creates a symlink to the original
         video file.
     """
 
-    out_path = output_dir / f"{video_path.stem}.mp4"  # noqa: E501
+    out_path = output_dir / f"{video_path.stem}.mp4"
 
-    # Trivial Case, do nothing
     if arg_set is None:
         symlink(video_path, out_path)
-        return out_path
+        return str(out_path)
 
-    input_args = arg_set[0]
-    output_args = arg_set[1]
-
+    input_args, output_args = arg_set
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
-
-    # Set thread count
     if ffmpeg_thread_cnt > 0:
         ffmpeg_command.extend(["-threads", str(ffmpeg_thread_cnt)])
-
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))
     ffmpeg_command.extend(["-i", str(video_path)])
@@ -240,18 +242,7 @@ def convert_video(
         ffmpeg_command.extend(shlex.split(output_args))
     ffmpeg_command.append(str(out_path))
 
-    # Capture and return error message if it exists
-    try:
-        subprocess.run(
-            ffmpeg_command, check=True, capture_output=True, text=True
-        )
-        return str(out_path)
-
-    except CalledProcessError as e:
-        error_msg = (
-            f"FFmpeg conversion failed for {video_path}\n"
-            f"Command: {' '.join(ffmpeg_command)}\n"
-            f"Return code: {e.returncode}\n"
-            f"Error output:\n{e.stderr}\n"
-        )
-        return (str(out_path), error_msg)
+    subprocess.run(
+        ffmpeg_command, check=True, capture_output=True, text=True
+    )
+    return str(out_path)
