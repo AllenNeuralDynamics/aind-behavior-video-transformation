@@ -98,6 +98,47 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     run_job() -> JobResponse
     """
 
+    def _run_parallel(
+        self,
+        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
+    ) -> list[tuple[Path, CalledProcessError]]:
+        """Run conversions in a ProcessPoolExecutor, collecting failures."""
+        errors: list[tuple[Path, CalledProcessError]] = []
+        if not convert_video_args:
+            return errors
+        thread_cnt = self.job_settings.ffmpeg_thread_cnt
+        with ProcessPoolExecutor(max_workers=len(convert_video_args)) as ex:
+            futures = {
+                ex.submit(convert_video, *params, thread_cnt): params
+                for params in convert_video_args
+            }
+            for future in as_completed(futures):
+                video_path = futures[future][0]
+                try:
+                    result = future.result()
+                except CalledProcessError as exc:
+                    errors.append((video_path, exc))
+                else:
+                    logger.info("FFmpeg job completed: %s", result)
+        return errors
+
+    def _run_serial(
+        self,
+        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
+    ) -> list[tuple[Path, CalledProcessError]]:
+        """Run conversions one at a time, collecting failures."""
+        errors: list[tuple[Path, CalledProcessError]] = []
+        thread_cnt = self.job_settings.ffmpeg_thread_cnt
+        for params in convert_video_args:
+            video_path = params[0]
+            try:
+                result = convert_video(*params, thread_cnt)
+            except CalledProcessError as exc:
+                errors.append((video_path, exc))
+            else:
+                logger.info("FFmpeg job completed: %s", result)
+        return errors
+
     def _run_compression(
         self,
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
@@ -105,54 +146,24 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         """
         Runs CompressionRequests at the specified paths.
         """
-        errors: list[tuple[Path, CalledProcessError]] = []
         if self.job_settings.parallel_compression:
-            # Execute in-parallel
-            if len(convert_video_args) == 0:
-                return
-
-            num_jobs = len(convert_video_args)
-            with ProcessPoolExecutor(max_workers=num_jobs) as executor:
-                futures = {
-                    executor.submit(
-                        convert_video,
-                        *params,
-                        self.job_settings.ffmpeg_thread_cnt,
-                    ): params
-                    for params in convert_video_args
-                }
-                for future in as_completed(futures):
-                    video_path = futures[future][0]
-                    try:
-                        result = future.result()
-                    except CalledProcessError as exc:
-                        errors.append((video_path, exc))
-                    else:
-                        logger.info("FFmpeg job completed: %s", result)
+            errors = self._run_parallel(convert_video_args)
         else:
-            # Execute serially
-            for params in convert_video_args:
-                video_path = params[0]
-                try:
-                    result = convert_video(
-                        *params, self.job_settings.ffmpeg_thread_cnt
-                    )
-                except CalledProcessError as exc:
-                    errors.append((video_path, exc))
-                else:
-                    logger.info("FFmpeg job completed: %s", result)
+            errors = self._run_serial(convert_video_args)
 
-        if errors:
-            formatted = [
-                _format_ffmpeg_error(video_path, exc)
-                for video_path, exc in errors
-            ]
-            for block in formatted:
-                logger.error(block)
-            raise RuntimeError(
-                f"{len(errors)} ffmpeg job(s) failed:\n\n"
-                + "\n\n".join(formatted)
-            )
+        if not errors:
+            return
+
+        formatted = [
+            _format_ffmpeg_error(video_path, exc)
+            for video_path, exc in errors
+        ]
+        for block in formatted:
+            logger.error(block)
+        raise RuntimeError(
+            f"{len(errors)} ffmpeg job(s) failed:\n\n"
+            + "\n\n".join(formatted)
+        )
 
     def run_job(self) -> JobResponse:
         """
