@@ -1,19 +1,10 @@
-FROM lscr.io/linuxserver/ffmpeg:8.0.1
+FROM docker.io/mwader/static-ffmpeg:8.1.2-amd64 AS ffmpeg
+FROM docker.io/python:3.13-slim-trixie
+
+COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 
 WORKDIR /app
-
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip python3-venv build-essential python3-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# Pip install
-ADD src ./src
-ADD pyproject.toml .
-ADD setup.py .
-
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-RUN pip install . --no-cache-dir
-
-ENTRYPOINT []
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip install --no-cache-dir .
