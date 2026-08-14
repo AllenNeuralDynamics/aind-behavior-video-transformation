@@ -75,7 +75,6 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     compression_requested=CompressionRequest(
                         compression_enum=compression_enum
                     ),
-                    parallel_compression=False,
                 )
                 response = helper_run_compression_job(job_settings, mock_time)
                 self.assertEqual(expected_response, response)
@@ -124,7 +123,6 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     compression_requested=CompressionRequest(
                         compression_enum=CompressionEnum.DEFAULT,
                     ),
-                    parallel_compression=True,
                     ffmpeg_thread_cnt=4,
                 )
                 response = helper_run_compression_job(job_settings, mock_time)
@@ -272,7 +270,6 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     input_source=in_path,
                     output_directory=out_path,
                     compression_requested=faulty_req,
-                    parallel_compression=True,
                 )
                 with self.capture_logs() as log_file:
                     self.assertRaises(
