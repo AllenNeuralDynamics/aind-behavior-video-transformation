@@ -3,7 +3,11 @@
 import logging
 import shlex
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+
+# CHANGED: ProcessPoolExecutor / as_completed are no longer used. Parallelism
+# now comes from SLURM launching many copies of this script, one per
+# partition. 
+# from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from subprocess import CalledProcessError
 from time import time
@@ -66,16 +70,39 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
-    parallel_compression: bool = Field(
-        default=True,
-        description="Run compression in parallel or sequentially.",
-    )
+    # CHANGED: disabled. Each node runs its own partition sequentially; the
+    # scheduler provides the parallelism. Leaving this field in place would
+    # invite someone to set it True and oversubscribe the node's cgroup.
+    # parallel_compression: bool = Field(
+    #     default=True,
+    #     description="Run compression in parallel or sequentially.",
+    # )
     ffmpeg_thread_cnt: int = Field(
         default=0, description="Number of threads per ffmpeg compression job."
     )
     file_filter: str | None = Field(
         default=None,
         description="If set, filter file paths based on regex pattern.",
+    )
+    # Partitioning settings
+    partition_number: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "1-based partition index for this node. Pass "
+            "$SLURM_ARRAY_TASK_ID here with --array=1-N (NOT 0-based)."
+        ),
+    )
+
+    num_partitions: int = Field(
+        # ADDED default=1: "not configured" now means "one partition, process
+        # everything".
+        default=1,
+        ge=1,
+        description=(
+            "Total number of partitions in the array. Must be identical on "
+            "every node. Default 1 means this node processes all videos."
+        ),
     )
 
 
@@ -98,29 +125,30 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     run_job() -> JobResponse
     """
 
-    def _run_parallel(
-        self,
-        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
-    ) -> list[tuple[Path, CalledProcessError]]:
-        """Run conversions in a ProcessPoolExecutor, collecting failures."""
-        errors: list[tuple[Path, CalledProcessError]] = []
-        if not convert_video_args:
-            return errors
-        thread_cnt = self.job_settings.ffmpeg_thread_cnt
-        with ProcessPoolExecutor(max_workers=len(convert_video_args)) as ex:
-            futures = {
-                ex.submit(convert_video, *params, thread_cnt): params
-                for params in convert_video_args
-            }
-            for future in as_completed(futures):
-                video_path = futures[future][0]
-                try:
-                    result = future.result()
-                except CalledProcessError as exc:
-                    errors.append((video_path, exc))
-                else:
-                    logger.info("FFmpeg job completed: %s", result)
-        return errors
+    # CHANGED: _run_parallel disabled. 
+    # def _run_parallel(
+    #     self,
+    #     convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
+    # ) -> list[tuple[Path, CalledProcessError]]:
+    #     """Run conversions in a ProcessPoolExecutor, collecting failures."""
+    #     errors: list[tuple[Path, CalledProcessError]] = []
+    #     if not convert_video_args:
+    #         return errors
+    #     thread_cnt = self.job_settings.ffmpeg_thread_cnt
+    #     with ProcessPoolExecutor(max_workers=len(convert_video_args)) as ex:
+    #         futures = {
+    #             ex.submit(convert_video, *params, thread_cnt): params
+    #             for params in convert_video_args
+    #         }
+    #         for future in as_completed(futures):
+    #             video_path = futures[future][0]
+    #             try:
+    #                 result = future.result()
+    #             except CalledProcessError as exc:
+    #                 errors.append((video_path, exc))
+    #             else:
+    #                 logger.info("FFmpeg job completed: %s", result)
+    #     return errors
 
     def _run_serial(
         self,
@@ -144,12 +172,15 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
     ) -> None:
         """
-        Runs CompressionRequests at the specified paths.
+        Runs CompressionRequests at the specified paths, sequentially within
+        this partition.
         """
-        if self.job_settings.parallel_compression:
-            errors = self._run_parallel(convert_video_args)
-        else:
-            errors = self._run_serial(convert_video_args)
+        # CHANGED: no more branch, _run_serial is the only path.
+        # if self.job_settings.parallel_compression:
+        #     errors = self._run_parallel(convert_video_args)
+        # else:
+        #     errors = self._run_serial(convert_video_args)
+        errors = self._run_serial(convert_video_args)
 
         if not errors:
             return
@@ -201,6 +232,34 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             overrides,
             file_filter,
         )
+        # Deterministic order is required for correctness: every node builds
+        # this same list independently and then takes its own stride, so all
+        # nodes must agree on the ordering. transform_directory does not
+        # guarantee one.
+        convert_video_args.sort(key=lambda x: str(x[0]))
+
+        total_videos = len(convert_video_args)
+        partition_number = self.job_settings.partition_number
+        num_partitions = self.job_settings.num_partitions
+
+        if partition_number > num_partitions:
+            raise ValueError(
+                f"partition_number ({partition_number}) exceeds "
+                f"num_partitions ({num_partitions})"
+            )
+
+        convert_video_args = convert_video_args[
+            partition_number - 1 :: num_partitions
+        ]
+
+        logger.info(
+            "Partition %d/%d: processing %d of %d videos",
+            partition_number,
+            num_partitions,
+            len(convert_video_args),
+            total_videos,
+        )
+
         self._run_compression(convert_video_args)
 
         job_end_time = time()
@@ -231,6 +290,7 @@ if __name__ == "__main__":
         )
 
     job = BehaviorVideoJob(job_settings=job_settings)
+
     job_response = job.run_job()
     print(job_response.status_code)
 
