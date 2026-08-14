@@ -6,7 +6,7 @@ import sys
 
 # CHANGED: ProcessPoolExecutor / as_completed are no longer used. Parallelism
 # now comes from SLURM launching many copies of this script, one per
-# partition. 
+# partition.
 # from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -125,7 +125,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     run_job() -> JobResponse
     """
 
-    # CHANGED: _run_parallel disabled. 
+    # CHANGED: _run_parallel disabled.
     # def _run_parallel(
     #     self,
     #     convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
@@ -249,7 +249,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             )
 
         convert_video_args = convert_video_args[
-            partition_number - 1 :: num_partitions
+            partition_number - 1:: num_partitions
         ]
 
         logger.info(
