@@ -3,11 +3,6 @@
 import logging
 import shlex
 import sys
-
-# CHANGED: ProcessPoolExecutor / as_completed are no longer used. Parallelism
-# now comes from SLURM launching many copies of this script, one per
-# partition.
-# from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from subprocess import CalledProcessError
 from time import time
@@ -70,13 +65,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
-    # CHANGED: disabled. Each node runs its own partition sequentially; the
-    # scheduler provides the parallelism. Leaving this field in place would
-    # invite someone to set it True and oversubscribe the node's cgroup.
-    # parallel_compression: bool = Field(
-    #     default=True,
-    #     description="Run compression in parallel or sequentially.",
-    # )
+
     ffmpeg_thread_cnt: int = Field(
         default=0, description="Number of threads per ffmpeg compression job."
     )
@@ -84,7 +73,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         default=None,
         description="If set, filter file paths based on regex pattern.",
     )
-    # Partitioning settings
+
     partition_number: int = Field(
         default=1,
         ge=1,
@@ -95,8 +84,6 @@ class BehaviorVideoJobSettings(BasicJobSettings):
     )
 
     num_partitions: int = Field(
-        # ADDED default=1: "not configured" now means "one partition, process
-        # everything".
         default=1,
         ge=1,
         description=(
@@ -125,31 +112,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     run_job() -> JobResponse
     """
 
-    # CHANGED: _run_parallel disabled.
-    # def _run_parallel(
-    #     self,
-    #     convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
-    # ) -> list[tuple[Path, CalledProcessError]]:
-    #     """Run conversions in a ProcessPoolExecutor, collecting failures."""
-    #     errors: list[tuple[Path, CalledProcessError]] = []
-    #     if not convert_video_args:
-    #         return errors
-    #     thread_cnt = self.job_settings.ffmpeg_thread_cnt
-    #     with ProcessPoolExecutor(max_workers=len(convert_video_args)) as ex:
-    #         futures = {
-    #             ex.submit(convert_video, *params, thread_cnt): params
-    #             for params in convert_video_args
-    #         }
-    #         for future in as_completed(futures):
-    #             video_path = futures[future][0]
-    #             try:
-    #                 result = future.result()
-    #             except CalledProcessError as exc:
-    #                 errors.append((video_path, exc))
-    #             else:
-    #                 logger.info("FFmpeg job completed: %s", result)
-    #     return errors
-
     def _run_serial(
         self,
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
@@ -175,11 +137,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         Runs CompressionRequests at the specified paths, sequentially within
         this partition.
         """
-        # CHANGED: no more branch, _run_serial is the only path.
-        # if self.job_settings.parallel_compression:
-        #     errors = self._run_parallel(convert_video_args)
-        # else:
-        #     errors = self._run_serial(convert_video_args)
         errors = self._run_serial(convert_video_args)
 
         if not errors:
@@ -232,10 +189,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             overrides,
             file_filter,
         )
-        # Deterministic order is required for correctness: every node builds
-        # this same list independently and then takes its own stride, so all
-        # nodes must agree on the ordering. transform_directory does not
-        # guarantee one.
+
         convert_video_args.sort(key=lambda x: str(x[0]))
 
         total_videos = len(convert_video_args)
@@ -283,7 +237,6 @@ if __name__ == "__main__":
             cli_args.config_file
         )
     else:
-        # Default settings
         job_settings = BehaviorVideoJobSettings(
             input_source=Path("tests/test_video_in_dir"),
             output_directory=Path("tests/test_video_out_dir"),
