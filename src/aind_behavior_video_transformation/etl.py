@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from subprocess import CalledProcessError
 from time import time
-from typing import List, Optional, Tuple, Union
 
 from aind_data_transformation.core import (
     BasicJobSettings,
@@ -55,9 +54,9 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         default=CompressionRequest(),
         description="Compression requested for video files",
     )
-    video_specific_compression_requests: Optional[
-        List[Tuple[Union[Path, str], CompressionRequest]]
-    ] = Field(
+    video_specific_compression_requests: (
+        list[tuple[Path | str, CompressionRequest]] | None
+    ) = Field(
         default=None,
         description=(
             "Pairs of video files or directories containing videos, and "
@@ -89,6 +88,26 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         description=(
             "Total number of partitions in the array. Must be identical on "
             "every node. Default 1 means this node processes all videos."
+        ),
+    )
+
+    video_extensions: set[str] = Field(
+        default_factory=lambda: {
+            ".avi",
+            ".mp4",
+            ".mov",
+            ".mkv",
+            ".mpg",
+            ".mpeg",
+            ".wmv",
+            ".flv",
+            ".m4v",
+            ".webm",
+        },
+        description=(
+            "Lowercase suffixes treated as videos when balancing partitions. "
+            "Entries not matching are assumed to be symlinked at negligible "
+            "cost and are spread by count rather than by weight."
         ),
     )
 
@@ -151,6 +170,60 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             f"{len(errors)} ffmpeg job(s) failed:\n\n" + "\n\n".join(formatted)
         )
 
+    @staticmethod
+    def _partition_args(
+        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
+        num_partitions: int,
+        video_extensions: set[str],
+    ) -> list[list[tuple[Path, Path, tuple[str, str] | None]]]:
+        """Split the work list into partitions of comparable cost.
+
+        The input source holds a mix of video files, which are transcoded by
+        ffmpeg, and non-video files, which are only symlinked. Those costs
+        differ by orders of magnitude, so slicing the combined list balances
+        entry counts while leaving the real work lopsided. In the worst case
+        the stride aligns with the directory layout and a single partition
+        receives every video.
+
+        Videos are therefore assigned first, largest to smallest, each going
+        to whichever partition is currently lightest (greedy
+        longest-processing-time). File size stands in for encode cost, which
+        holds when videos share a duration and recording setup, as different
+        camera angles from one session do. The symlink-only entries are then
+        spread round-robin, since their cost is negligible.
+
+        Ties break on the input path so every node in the array derives the
+        same assignment independently, without coordinating.
+
+        Returns one list per partition, in partition order.
+        """
+        videos = []
+        others = []
+        for params in convert_video_args:
+            if params[0].suffix.lower() in video_extensions:
+                videos.append(params)
+            else:
+                others.append(params)
+
+        partitions: list[list] = [[] for _ in range(num_partitions)]
+
+        loads = [0] * num_partitions
+        weighted = sorted(
+            ((params[0].stat().st_size, params) for params in videos),
+            key=lambda pair: (-pair[0], str(pair[1][0])),
+        )
+        for size, params in weighted:
+            lightest = loads.index(min(loads))
+            partitions[lightest].append(params)
+            loads[lightest] += size
+
+        for index, params in enumerate(
+            sorted(others, key=lambda params: str(params[0]))
+        ):
+            partitions[index % num_partitions].append(params)
+
+        return partitions
+
     def run_job(self) -> JobResponse:
         """
         Main public method to run the compression job.
@@ -192,9 +265,10 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
         convert_video_args.sort(key=lambda x: str(x[0]))
 
-        total_videos = len(convert_video_args)
+        total_entries = len(convert_video_args)
         partition_number = self.job_settings.partition_number
         num_partitions = self.job_settings.num_partitions
+        video_extensions = self.job_settings.video_extensions
 
         if partition_number > num_partitions:
             raise ValueError(
@@ -202,16 +276,24 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                 f"num_partitions ({num_partitions})"
             )
 
-        convert_video_args = convert_video_args[
-            partition_number - 1:: num_partitions
-        ]
+        convert_video_args = self._partition_args(
+            convert_video_args,
+            num_partitions,
+            video_extensions,
+        )[partition_number - 1]
 
+        num_videos = sum(
+            1
+            for params in convert_video_args
+            if params[0].suffix.lower() in video_extensions
+        )
         logger.info(
-            "Partition %d/%d: processing %d of %d videos",
+            "Partition %d/%d: processing %d of %d entries (%d videos)",
             partition_number,
             num_partitions,
             len(convert_video_args),
-            total_videos,
+            total_entries,
+            num_videos,
         )
 
         self._run_compression(convert_video_args)
@@ -247,4 +329,4 @@ if __name__ == "__main__":
     job_response = job.run_job()
     print(job_response.status_code)
 
-    logging.info(job_response.model_dump_json())
+    logger.info(job_response.model_dump_json())
