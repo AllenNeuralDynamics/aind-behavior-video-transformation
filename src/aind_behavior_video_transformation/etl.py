@@ -212,8 +212,12 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             ((params[0].stat().st_size, params) for params in videos),
             key=lambda pair: (-pair[0], str(pair[1][0])),
         )
+        
         for size, params in weighted:
-            lightest = loads.index(min(loads))
+            lightest = min(
+                range(num_partitions),
+                key=lambda i: (loads[i], len(partitions[i]), i),
+            )
             partitions[lightest].append(params)
             loads[lightest] += size
 
@@ -247,7 +251,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             self.job_settings.video_specific_compression_requests
         )
         job_out_dir_path = self.job_settings.output_directory.resolve()
-        Path(job_out_dir_path).mkdir(exist_ok=True)
+        Path(job_out_dir_path).mkdir(parents=True, exist_ok=True)
         job_in_dir_path = self.job_settings.input_source.resolve()
         overrides = build_overrides_dict(video_comp_pairs, job_in_dir_path)
 
