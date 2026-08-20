@@ -212,7 +212,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             ((params[0].stat().st_size, params) for params in videos),
             key=lambda pair: (-pair[0], str(pair[1][0])),
         )
-        
+
         for size, params in weighted:
             lightest = min(
                 range(num_partitions),
