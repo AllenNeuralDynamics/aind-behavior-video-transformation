@@ -57,13 +57,16 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
     if video_comp_pairs:
         for video_name, comp_req in video_comp_pairs:
             video_path = Path(video_name)
+
+        for video_name, comp_req in video_comp_pairs:
+            video_path = Path(video_name)
+
             # Figure out how video path was passed, convert to absolute
-            if video_path.is_absolute():
-                in_path = video_path
-            elif video_path.exists():
-                in_path = video_path.resolve()
+            if video_path.is_absolute() or video_path.exists():
+                candidate = video_path
             else:
-                in_path = (job_in_dir_path / video_path).resolve()
+                candidate = job_in_dir_path / video_path
+            in_path = candidate.parent.resolve() / candidate.name
             # Set overrides for the video path
             override_arg_set = comp_req.determine_ffmpeg_arg_set()
             # If it is a directory, set overrides for all subdirectories
