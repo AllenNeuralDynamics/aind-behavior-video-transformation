@@ -58,9 +58,6 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
         for video_name, comp_req in video_comp_pairs:
             video_path = Path(video_name)
 
-        for video_name, comp_req in video_comp_pairs:
-            video_path = Path(video_name)
-
             # Figure out how video path was passed, convert to absolute
             if video_path.is_absolute() or video_path.exists():
                 candidate = video_path
