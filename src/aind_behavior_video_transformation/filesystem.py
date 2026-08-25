@@ -19,6 +19,7 @@ VIDEO_EXTENSIONS = frozenset({
     ".webm",
 })
 
+
 def likely_video_file(file: Path) -> bool:
     """
     Check if a file is likely a video file based on its suffix.
@@ -34,6 +35,7 @@ def likely_video_file(file: Path) -> bool:
         True if the file suffix indicates it is a video file, False otherwise.
     """
     return file.suffix.lower() in VIDEO_EXTENSIONS
+
 
 def build_overrides_dict(video_comp_pairs, job_in_dir_path):
     """
