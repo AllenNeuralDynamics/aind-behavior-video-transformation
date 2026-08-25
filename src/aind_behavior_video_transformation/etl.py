@@ -46,23 +46,57 @@ def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
     )
 
 
-def frame_count(path):
-    """Return a video's frame count as an encode-cost proxy.
+def encode_cost(path: Path) -> int:
+    """Return total video pixels as a proxy for encode cost.
 
-    Uses ffprobe to count decoded frames. Falls back to file size when
-    ffprobe reports nothing (unreadable or stub files), so partitioning
-    stays robust to non-video or truncated inputs.
+    Uses container metadata when available, falling back to scanning the
+    video stream only when the container does not provide a frame count.
     """
+    path = Path(path)
+
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0",
-         "-count_frames", "-show_entries", "stream=nb_read_frames",
-         "-of", "csv=p=0", str(path)],
-        check=False, capture_output=True, text=True,
+        [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=nb_frames,width,height",
+            "-of", "json",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
-    text = out.stdout.strip()
-    if not text or text == "N/A":
-        return Path(path).stat().st_size
-    return int(text)
+
+    stream = json.loads(out.stdout)["streams"][0]
+    width = int(stream["width"])
+    height = int(stream["height"])
+
+    frame_count = stream.get("nb_frames")
+    if frame_count not in (None, "N/A"):
+        return int(frame_count) * width * height
+
+    # Some containers do not expose nb_frames, so count them explicitly.
+    out = subprocess.run(
+        [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-count_frames",
+            "-show_entries", "stream=nb_read_frames",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    frame_count = out.stdout.strip()
+    if not frame_count or frame_count == "N/A":
+        raise ValueError(f"Could not determine frame count for {path}")
+
+    return int(frame_count) * width * height
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
