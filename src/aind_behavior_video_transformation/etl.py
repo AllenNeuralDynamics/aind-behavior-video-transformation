@@ -291,27 +291,35 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
                 f"num_partitions ({num_partitions})"
             )
 
-        convert_video_args = self._partition_args(
+        # This script runs once per SLURM array task; every task executes
+        # this same code independently with a different partition_number
+        # (from $SLURM_ARRAY_TASK_ID). _partition_args deterministically
+        # computes the full split of all jobs into num_partitions groups,
+        # and each task selects only the group it is responsible for. The
+        # split is derived identically on every node, so no coordination
+        # between tasks is needed.
+        all_partitions = self._partition_args(
             convert_video_args,
             num_partitions,
             video_extensions,
-        )[partition_number - 1]
+        )
+        this_partition = all_partitions[partition_number - 1]
 
         num_videos = sum(
             1
-            for params in convert_video_args
+            for params in this_partition
             if params[0].suffix.lower() in video_extensions
         )
         logger.info(
             "Partition %d/%d: processing %d of %d entries (%d videos)",
             partition_number,
             num_partitions,
-            len(convert_video_args),
+            len(this_partition),
             total_entries,
             num_videos,
         )
 
-        self._run_compression(convert_video_args)
+        self._run_compression(this_partition)
 
         job_end_time = time()
         return JobResponse(
