@@ -1,9 +1,11 @@
 """Module that defines the ETL class for behavior video transformations."""
 
+import json
 import logging
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from subprocess import CalledProcessError
 from time import time
@@ -51,6 +53,15 @@ def encode_cost(path: Path) -> int:
 
     Uses container metadata when available, falling back to scanning the
     video stream only when the container does not provide a frame count.
+    Multiplying frames by resolution lets videos of differing resolutions
+    be load-balanced against each other correctly.
+
+    Raises
+    ------
+    ValueError
+        If ffprobe cannot determine the frame count, which indicates a
+        corrupt or unreadable video. Failing loudly is preferred to
+        returning a value that is not comparable to real pixel counts.
     """
     path = Path(path)
 
@@ -219,6 +230,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
         num_partitions: int,
         video_extensions: set[str],
+        cost_fn: Callable[[Path], int] = encode_cost,
     ) -> list[list[tuple[Path, Path, tuple[str, str] | None]]]:
         """Split the work list into partitions of comparable cost.
 
@@ -231,10 +243,12 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
         Videos are therefore assigned first, largest to smallest, each going
         to whichever partition is currently lightest (greedy
-        longest-processing-time). File size stands in for encode cost, which
-        holds when videos share a duration and recording setup, as different
-        camera angles from one session do. The symlink-only entries are then
-        spread round-robin, since their cost is negligible.
+        longest-processing-time). Encode cost (via ``cost_fn``, by default
+        total pixel count) stands in for runtime. The symlink-only entries
+        are then spread round-robin, since their cost is negligible.
+
+        ``cost_fn`` is injectable so tests can supply a deterministic cost
+        without generating real videos; production uses ``encode_cost``.
 
         Ties break on the input path so every node in the array derives the
         same assignment independently, without coordinating.
@@ -253,7 +267,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
         loads = [0] * num_partitions
         weighted = sorted(
-            ((frame_count(params[0]), params) for params in videos),
+            ((cost_fn(params[0]), params) for params in videos),
             key=lambda pair: (pair[0], str(pair[1][0])),
             reverse=True,
         )
