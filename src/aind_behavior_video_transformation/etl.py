@@ -28,14 +28,6 @@ from aind_behavior_video_transformation.transform_videos import (
 
 logger = logging.getLogger(__name__)
 
-video_extensions: set[str] = Field(
-    default_factory=lambda: set(VIDEO_EXTENSIONS),
-    description=(
-        "Lowercase suffixes treated as videos when balancing partitions. "
-        "Entries not matching are assumed to be symlinked at negligible "
-        "cost and are spread by count rather than by weight."
-    ),
-)
 
 def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
     """Format an ffmpeg ``CalledProcessError`` as a single log record body.
@@ -55,13 +47,22 @@ def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
 
 
 def frame_count(path):
+    """Return a video's frame count as an encode-cost proxy.
+
+    Uses ffprobe to count decoded frames. Falls back to file size when
+    ffprobe reports nothing (unreadable or stub files), so partitioning
+    stays robust to non-video or truncated inputs.
+    """
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
          "-count_frames", "-show_entries", "stream=nb_read_frames",
          "-of", "csv=p=0", str(path)],
         check=False, capture_output=True, text=True,
     )
-    return int(out.stdout.strip())
+    text = out.stdout.strip()
+    if not text or text == "N/A":
+        return Path(path).stat().st_size
+    return int(text)
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
@@ -112,18 +113,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
     )
 
     video_extensions: set[str] = Field(
-        default_factory=lambda: {
-            ".avi",
-            ".mp4",
-            ".mov",
-            ".mkv",
-            ".mpg",
-            ".mpeg",
-            ".wmv",
-            ".flv",
-            ".m4v",
-            ".webm",
-        },
+        default_factory=lambda: set(VIDEO_EXTENSIONS),
         description=(
             "Lowercase suffixes treated as videos when balancing partitions. "
             "Entries not matching are assumed to be symlinked at negligible "
