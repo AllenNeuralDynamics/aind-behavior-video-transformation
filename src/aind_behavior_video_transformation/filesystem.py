@@ -6,6 +6,18 @@ from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
 
+VIDEO_EXTENSIONS = frozenset({
+    ".avi",
+    ".mp4",
+    ".mov",
+    ".mkv",
+    ".mpg",
+    ".mpeg",
+    ".wmv",
+    ".flv",
+    ".m4v",
+    ".webm",
+})
 
 def likely_video_file(file: Path) -> bool:
     """
@@ -21,18 +33,7 @@ def likely_video_file(file: Path) -> bool:
     bool
         True if the file suffix indicates it is a video file, False otherwise.
     """
-    return file.suffix in set(
-        [
-            ".mp4",
-            ".avi",
-            ".mov",
-            ".mkv",
-            ".flv",
-            ".wmv",
-            ".webm",
-        ]
-    )
-
+    return file.suffix.lower() in VIDEO_EXTENSIONS
 
 def build_overrides_dict(video_comp_pairs, job_in_dir_path):
     """

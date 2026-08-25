@@ -2,6 +2,7 @@
 
 import logging
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -16,6 +17,7 @@ from aind_data_transformation.core import (
 from pydantic import Field
 
 from aind_behavior_video_transformation.filesystem import (
+    VIDEO_EXTENSIONS,
     build_overrides_dict,
     transform_directory,
 )
@@ -26,6 +28,14 @@ from aind_behavior_video_transformation.transform_videos import (
 
 logger = logging.getLogger(__name__)
 
+video_extensions: set[str] = Field(
+    default_factory=lambda: set(VIDEO_EXTENSIONS),
+    description=(
+        "Lowercase suffixes treated as videos when balancing partitions. "
+        "Entries not matching are assumed to be symlinked at negligible "
+        "cost and are spread by count rather than by weight."
+    ),
+)
 
 def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
     """Format an ffmpeg ``CalledProcessError`` as a single log record body.
@@ -42,6 +52,16 @@ def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
         f"{stderr}\n"
         f"--- end stderr ---"
     )
+
+
+def frame_count(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-count_frames", "-show_entries", "stream=nb_read_frames",
+         "-of", "csv=p=0", str(path)],
+        check=False, capture_output=True, text=True,
+    )
+    return int(out.stdout.strip())
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
@@ -209,8 +229,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
         loads = [0] * num_partitions
         weighted = sorted(
-            ((params[0].stat().st_size, params) for params in videos),
-            key=lambda pair: (-pair[0], str(pair[1][0])),
+            ((frame_count(params[0]), params) for params in videos),
+            key=lambda pair: (pair[0], str(pair[1][0])),
+            reverse=True,
         )
 
         for size, params in weighted:
