@@ -1,11 +1,8 @@
 """Module that defines the ETL class for behavior video transformations."""
 
-import json
 import logging
 import shlex
-import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from subprocess import CalledProcessError
 from time import time
@@ -46,68 +43,6 @@ def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
         f"{stderr}\n"
         f"--- end stderr ---"
     )
-
-
-def encode_cost(path: Path) -> int:
-    """Return total video pixels as a proxy for encode cost.
-
-    Uses container metadata when available, falling back to scanning the
-    video stream only when the container does not provide a frame count.
-    Multiplying frames by resolution lets videos of differing resolutions
-    be load-balanced against each other correctly.
-
-    Raises
-    ------
-    ValueError
-        If ffprobe cannot determine the frame count, which indicates a
-        corrupt or unreadable video. Failing loudly is preferred to
-        returning a value that is not comparable to real pixel counts.
-    """
-    path = Path(path)
-
-    out = subprocess.run(
-        [
-            "ffprobe",
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=nb_frames,width,height",
-            "-of", "json",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    stream = json.loads(out.stdout)["streams"][0]
-    width = int(stream["width"])
-    height = int(stream["height"])
-
-    frame_count = stream.get("nb_frames")
-    if frame_count not in (None, "N/A"):
-        return int(frame_count) * width * height
-
-    # Some containers do not expose nb_frames, so count them explicitly.
-    out = subprocess.run(
-        [
-            "ffprobe",
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-count_frames",
-            "-show_entries", "stream=nb_read_frames",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    frame_count = out.stdout.strip()
-    if not frame_count or frame_count == "N/A":
-        raise ValueError(f"Could not determine frame count for {path}")
-
-    return int(frame_count) * width * height
 
 
 class BehaviorVideoJobSettings(BasicJobSettings):
@@ -230,28 +165,20 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
         num_partitions: int,
         video_extensions: set[str],
-        cost_fn: Callable[[Path], int] = encode_cost,
     ) -> list[list[tuple[Path, Path, tuple[str, str] | None]]]:
-        """Split the work list into partitions of comparable cost.
+        """Split the work list into partitions of comparable size.
 
-        The input source holds a mix of video files, which are transcoded by
-        ffmpeg, and non-video files, which are only symlinked. Those costs
-        differ by orders of magnitude, so slicing the combined list balances
-        entry counts while leaving the real work lopsided. In the worst case
-        the stride aligns with the directory layout and a single partition
-        receives every video.
+        The input source holds a mix of video files, which are transcoded
+        by ffmpeg, and non-video files, which are only symlinked. Videos
+        and non-videos are each spread round-robin across the partitions
+        by sorted input path, so every partition receives a comparable
+        count of each. Handling videos separately keeps the expensive
+        transcode work evenly distributed by count rather than letting the
+        directory layout pile every video onto one partition.
 
-        Videos are therefore assigned first, largest to smallest, each going
-        to whichever partition is currently lightest (greedy
-        longest-processing-time). Encode cost (via ``cost_fn``, by default
-        total pixel count) stands in for runtime. The symlink-only entries
-        are then spread round-robin, since their cost is negligible.
-
-        ``cost_fn`` is injectable so tests can supply a deterministic cost
-        without generating real videos; production uses ``encode_cost``.
-
-        Ties break on the input path so every node in the array derives the
-        same assignment independently, without coordinating.
+        Assignment depends only on the sorted input paths, so every node
+        in the array derives the same split independently, without
+        coordinating.
 
         Returns one list per partition, in partition order.
         """
@@ -265,20 +192,10 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
         partitions: list[list] = [[] for _ in range(num_partitions)]
 
-        loads = [0] * num_partitions
-        weighted = sorted(
-            ((cost_fn(params[0]), params) for params in videos),
-            key=lambda pair: (pair[0], str(pair[1][0])),
-            reverse=True,
-        )
-
-        for size, params in weighted:
-            lightest = min(
-                range(num_partitions),
-                key=lambda i: (loads[i], len(partitions[i]), i),
-            )
-            partitions[lightest].append(params)
-            loads[lightest] += size
+        for index, params in enumerate(
+            sorted(videos, key=lambda params: str(params[0]))
+        ):
+            partitions[index % num_partitions].append(params)
 
         for index, params in enumerate(
             sorted(others, key=lambda params: str(params[0]))
