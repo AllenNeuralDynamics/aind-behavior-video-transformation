@@ -14,7 +14,7 @@ from aind_data_transformation.core import (
     get_parser,
 )
 from aind_video_utils import VIDEO_EXTENSIONS
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from aind_behavior_video_transformation.filesystem import (
     build_overrides_dict,
@@ -100,6 +100,16 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "cost and are spread by count rather than by weight."
         ),
     )
+
+    @model_validator(mode="after")
+    def _check_partition_in_range(self) -> "BehaviorVideoJobSettings":
+        """Ensure partition_number does not exceed num_partitions."""
+        if self.partition_number > self.num_partitions:
+            raise ValueError(
+                f"partition_number ({self.partition_number}) exceeds "
+                f"num_partitions ({self.num_partitions})"
+            )
+        return self
 
 
 class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
@@ -249,12 +259,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         partition_number = self.job_settings.partition_number
         num_partitions = self.job_settings.num_partitions
         video_extensions = self.job_settings.video_extensions
-
-        if partition_number > num_partitions:
-            raise ValueError(
-                f"partition_number ({partition_number}) exceeds "
-                f"num_partitions ({num_partitions})"
-            )
 
         # This script runs once per SLURM array task; every task executes
         # this same code independently with a different partition_number
