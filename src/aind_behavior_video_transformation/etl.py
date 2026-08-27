@@ -13,10 +13,10 @@ from aind_data_transformation.core import (
     JobResponse,
     get_parser,
 )
+from aind_video_utils import VIDEO_EXTENSIONS
 from pydantic import Field
 
 from aind_behavior_video_transformation.filesystem import (
-    VIDEO_EXTENSIONS,
     build_overrides_dict,
     transform_directory,
 )

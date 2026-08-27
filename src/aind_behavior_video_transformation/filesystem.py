@@ -6,18 +6,7 @@ from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
 
-VIDEO_EXTENSIONS = frozenset({
-    ".avi",
-    ".mp4",
-    ".mov",
-    ".mkv",
-    ".mpg",
-    ".mpeg",
-    ".wmv",
-    ".flv",
-    ".m4v",
-    ".webm",
-})
+from aind_video_utils import VIDEO_EXTENSIONS
 
 
 def likely_video_file(file: Path) -> bool:
