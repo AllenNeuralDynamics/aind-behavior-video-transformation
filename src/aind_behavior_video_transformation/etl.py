@@ -3,11 +3,9 @@
 import logging
 import shlex
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from subprocess import CalledProcessError
 from time import time
-from typing import List, Optional, Tuple, Union
 
 from aind_data_transformation.core import (
     BasicJobSettings,
@@ -15,10 +13,11 @@ from aind_data_transformation.core import (
     JobResponse,
     get_parser,
 )
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from aind_behavior_video_transformation.filesystem import (
     build_overrides_dict,
+    create_symlinks,
     transform_directory,
 )
 from aind_behavior_video_transformation.transform_videos import (
@@ -56,9 +55,9 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         default=CompressionRequest(),
         description="Compression requested for video files",
     )
-    video_specific_compression_requests: Optional[
-        List[Tuple[Union[Path, str], CompressionRequest]]
-    ] = Field(
+    video_specific_compression_requests: (
+        list[tuple[Path | str, CompressionRequest]] | None
+    ) = Field(
         default=None,
         description=(
             "Pairs of video files or directories containing videos, and "
@@ -66,10 +65,7 @@ class BehaviorVideoJobSettings(BasicJobSettings):
             "request"
         ),
     )
-    parallel_compression: bool = Field(
-        default=True,
-        description="Run compression in parallel or sequentially.",
-    )
+
     ffmpeg_thread_cnt: int = Field(
         default=0, description="Number of threads per ffmpeg compression job."
     )
@@ -77,6 +73,34 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         default=None,
         description="If set, filter file paths based on regex pattern.",
     )
+
+    partition_number: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "1-based partition index for this node. Pass "
+            "$SLURM_ARRAY_TASK_ID here with --array=1-N (NOT 0-based)."
+        ),
+    )
+
+    num_partitions: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Total number of partitions in the array. Must be identical on "
+            "every node. Default 1 means this node processes all videos."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _check_partition_in_range(self) -> "BehaviorVideoJobSettings":
+        """Ensure partition_number does not exceed num_partitions."""
+        if self.partition_number > self.num_partitions:
+            raise ValueError(
+                f"partition_number ({self.partition_number}) exceeds "
+                f"num_partitions ({self.num_partitions})"
+            )
+        return self
 
 
 class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
@@ -97,30 +121,6 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
     -------
     run_job() -> JobResponse
     """
-
-    def _run_parallel(
-        self,
-        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
-    ) -> list[tuple[Path, CalledProcessError]]:
-        """Run conversions in a ProcessPoolExecutor, collecting failures."""
-        errors: list[tuple[Path, CalledProcessError]] = []
-        if not convert_video_args:
-            return errors
-        thread_cnt = self.job_settings.ffmpeg_thread_cnt
-        with ProcessPoolExecutor(max_workers=len(convert_video_args)) as ex:
-            futures = {
-                ex.submit(convert_video, *params, thread_cnt): params
-                for params in convert_video_args
-            }
-            for future in as_completed(futures):
-                video_path = futures[future][0]
-                try:
-                    result = future.result()
-                except CalledProcessError as exc:
-                    errors.append((video_path, exc))
-                else:
-                    logger.info("FFmpeg job completed: %s", result)
-        return errors
 
     def _run_serial(
         self,
@@ -144,12 +144,10 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
     ) -> None:
         """
-        Runs CompressionRequests at the specified paths.
+        Runs CompressionRequests at the specified paths, sequentially within
+        this partition.
         """
-        if self.job_settings.parallel_compression:
-            errors = self._run_parallel(convert_video_args)
-        else:
-            errors = self._run_serial(convert_video_args)
+        errors = self._run_serial(convert_video_args)
 
         if not errors:
             return
@@ -162,6 +160,29 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         raise RuntimeError(
             f"{len(errors)} ffmpeg job(s) failed:\n\n" + "\n\n".join(formatted)
         )
+
+    @staticmethod
+    def _partition_args(items: list, num_partitions: int) -> list[list]:
+        """Spread a list of work items round-robin across partitions.
+
+        Used for the videos and for the symlinks separately, so that each
+        partition receives a comparable count of each kind. Handling them
+        separately keeps the expensive transcode work evenly distributed
+        rather than letting the directory layout pile every video onto one
+        partition.
+
+        Assignment depends only on the sorted input paths, so every node in
+        the array derives the same split independently, without
+        coordinating.
+
+        Returns one list per partition, in partition order.
+        """
+        partitions: list[list] = [[] for _ in range(num_partitions)]
+        for index, params in enumerate(
+            sorted(items, key=lambda params: str(params[0]))
+        ):
+            partitions[index % num_partitions].append(params)
+        return partitions
 
     def run_job(self) -> JobResponse:
         """
@@ -186,7 +207,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             self.job_settings.video_specific_compression_requests
         )
         job_out_dir_path = self.job_settings.output_directory.resolve()
-        Path(job_out_dir_path).mkdir(exist_ok=True)
+        Path(job_out_dir_path).mkdir(parents=True, exist_ok=True)
         job_in_dir_path = self.job_settings.input_source.resolve()
         overrides = build_overrides_dict(video_comp_pairs, job_in_dir_path)
 
@@ -194,14 +215,49 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             self.job_settings.compression_requested.determine_ffmpeg_arg_set()
         )
         file_filter = self.job_settings.file_filter
-        convert_video_args = transform_directory(
+        convert_video_args, symlink_args = transform_directory(
             job_in_dir_path,
             job_out_dir_path,
             ffmpeg_arg_set,
             overrides,
             file_filter,
         )
-        self._run_compression(convert_video_args)
+
+        total_videos = len(convert_video_args)
+        total_symlinks = len(symlink_args)
+        partition_number = self.job_settings.partition_number
+        num_partitions = self.job_settings.num_partitions
+
+        # This script runs once per SLURM array task; every task executes
+        # this same code independently with a different partition_number
+        # (from $SLURM_ARRAY_TASK_ID). _partition_args deterministically
+        # computes the full split into num_partitions groups, and each task
+        # selects only the group it is responsible for. The split is derived
+        # identically on every node, so no coordination is needed.
+        #
+        # Videos and symlinks are split separately so each node gets a
+        # comparable share of both. Creating the symlinks here rather than
+        # during discovery is what stops every node from racing to create
+        # the same links.
+        this_partition = self._partition_args(
+            convert_video_args, num_partitions
+        )[partition_number - 1]
+        these_symlinks = self._partition_args(
+            symlink_args, num_partitions
+        )[partition_number - 1]
+
+        logger.info(
+            "Partition %d/%d: %d of %d videos, %d of %d symlinks",
+            partition_number,
+            num_partitions,
+            len(this_partition),
+            total_videos,
+            len(these_symlinks),
+            total_symlinks,
+        )
+
+        create_symlinks(these_symlinks)
+        self._run_compression(this_partition)
 
         job_end_time = time()
         return JobResponse(
@@ -224,14 +280,14 @@ if __name__ == "__main__":
             cli_args.config_file
         )
     else:
-        # Default settings
         job_settings = BehaviorVideoJobSettings(
             input_source=Path("tests/test_video_in_dir"),
             output_directory=Path("tests/test_video_out_dir"),
         )
 
     job = BehaviorVideoJob(job_settings=job_settings)
+
     job_response = job.run_job()
     print(job_response.status_code)
 
-    logging.info(job_response.model_dump_json())
+    logger.info(job_response.model_dump_json())
