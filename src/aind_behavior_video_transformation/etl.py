@@ -13,11 +13,11 @@ from aind_data_transformation.core import (
     JobResponse,
     get_parser,
 )
-from aind_video_utils import VIDEO_EXTENSIONS
 from pydantic import Field, model_validator
 
 from aind_behavior_video_transformation.filesystem import (
     build_overrides_dict,
+    create_symlinks,
     transform_directory,
 )
 from aind_behavior_video_transformation.transform_videos import (
@@ -92,15 +92,6 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         ),
     )
 
-    video_extensions: set[str] = Field(
-        default_factory=lambda: set(VIDEO_EXTENSIONS),
-        description=(
-            "Lowercase suffixes treated as videos when balancing partitions. "
-            "Entries not matching are assumed to be symlinked at negligible "
-            "cost and are spread by count rather than by weight."
-        ),
-    )
-
     @model_validator(mode="after")
     def _check_partition_in_range(self) -> "BehaviorVideoJobSettings":
         """Ensure partition_number does not exceed num_partitions."""
@@ -171,47 +162,26 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         )
 
     @staticmethod
-    def _partition_args(
-        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
-        num_partitions: int,
-        video_extensions: set[str],
-    ) -> list[list[tuple[Path, Path, tuple[str, str] | None]]]:
-        """Split the work list into partitions of comparable size.
+    def _partition_args(items: list, num_partitions: int) -> list[list]:
+        """Spread a list of work items round-robin across partitions.
 
-        The input source holds a mix of video files, which are transcoded
-        by ffmpeg, and non-video files, which are only symlinked. Videos
-        and non-videos are each spread round-robin across the partitions
-        by sorted input path, so every partition receives a comparable
-        count of each. Handling videos separately keeps the expensive
-        transcode work evenly distributed by count rather than letting the
-        directory layout pile every video onto one partition.
+        Used for the videos and for the symlinks separately, so that each
+        partition receives a comparable count of each kind. Handling them
+        separately keeps the expensive transcode work evenly distributed
+        rather than letting the directory layout pile every video onto one
+        partition.
 
-        Assignment depends only on the sorted input paths, so every node
-        in the array derives the same split independently, without
+        Assignment depends only on the sorted input paths, so every node in
+        the array derives the same split independently, without
         coordinating.
 
         Returns one list per partition, in partition order.
         """
-        videos = []
-        others = []
-        for params in convert_video_args:
-            if params[0].suffix.lower() in video_extensions:
-                videos.append(params)
-            else:
-                others.append(params)
-
         partitions: list[list] = [[] for _ in range(num_partitions)]
-
         for index, params in enumerate(
-            sorted(videos, key=lambda params: str(params[0]))
+            sorted(items, key=lambda params: str(params[0]))
         ):
             partitions[index % num_partitions].append(params)
-
-        for index, params in enumerate(
-            sorted(others, key=lambda params: str(params[0]))
-        ):
-            partitions[index % num_partitions].append(params)
-
         return partitions
 
     def run_job(self) -> JobResponse:
@@ -245,7 +215,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             self.job_settings.compression_requested.determine_ffmpeg_arg_set()
         )
         file_filter = self.job_settings.file_filter
-        convert_video_args = transform_directory(
+        convert_video_args, symlink_args = transform_directory(
             job_in_dir_path,
             job_out_dir_path,
             ffmpeg_arg_set,
@@ -253,41 +223,40 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             file_filter,
         )
 
-        convert_video_args.sort(key=lambda x: str(x[0]))
-
-        total_entries = len(convert_video_args)
+        total_videos = len(convert_video_args)
+        total_symlinks = len(symlink_args)
         partition_number = self.job_settings.partition_number
         num_partitions = self.job_settings.num_partitions
-        video_extensions = self.job_settings.video_extensions
 
         # This script runs once per SLURM array task; every task executes
         # this same code independently with a different partition_number
         # (from $SLURM_ARRAY_TASK_ID). _partition_args deterministically
-        # computes the full split of all jobs into num_partitions groups,
-        # and each task selects only the group it is responsible for. The
-        # split is derived identically on every node, so no coordination
-        # between tasks is needed.
-        all_partitions = self._partition_args(
-            convert_video_args,
-            num_partitions,
-            video_extensions,
-        )
-        this_partition = all_partitions[partition_number - 1]
+        # computes the full split into num_partitions groups, and each task
+        # selects only the group it is responsible for. The split is derived
+        # identically on every node, so no coordination is needed.
+        #
+        # Videos and symlinks are split separately so each node gets a
+        # comparable share of both. Creating the symlinks here rather than
+        # during discovery is what stops every node from racing to create
+        # the same links.
+        this_partition = self._partition_args(
+            convert_video_args, num_partitions
+        )[partition_number - 1]
+        these_symlinks = self._partition_args(
+            symlink_args, num_partitions
+        )[partition_number - 1]
 
-        num_videos = sum(
-            1
-            for params in this_partition
-            if params[0].suffix.lower() in video_extensions
-        )
         logger.info(
-            "Partition %d/%d: processing %d of %d entries (%d videos)",
+            "Partition %d/%d: %d of %d videos, %d of %d symlinks",
             partition_number,
             num_partitions,
             len(this_partition),
-            total_entries,
-            num_videos,
+            total_videos,
+            len(these_symlinks),
+            total_symlinks,
         )
 
+        create_symlinks(these_symlinks)
         self._run_compression(this_partition)
 
         job_end_time = time()
