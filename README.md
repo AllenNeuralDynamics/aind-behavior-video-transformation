@@ -84,6 +84,37 @@ time to produce the highest quality video possible might well be worth it.
  - On a merge to main, this package will be published as a docker
    image, which can easily be run on a SLURM cluster.
 
+### Running across multiple nodes
+
+A job can be split across a SLURM array. Every task runs the same command and
+discovers the same list of files independently, then acts only on the share
+identified by its own `partition_number`, so no coordination between tasks is
+needed.
+
+```bash
+sbatch --array=1-4 --cpus-per-task=8 --wrap='
+  python -m aind_behavior_video_transformation.etl --job-settings "{
+    \"input_source\": \"/mnt/input_source\",
+    \"output_directory\": \"/mnt/output_directory\",
+    \"partition_number\": $SLURM_ARRAY_TASK_ID,
+    \"num_partitions\": 4,
+    \"ffmpeg_thread_cnt\": 8
+  }"'
+```
+
+Notes:
+
+* `partition_number` is 1-based, so use `--array=1-N`, not `--array=0-(N-1)`.
+* `num_partitions` must match the array size and be identical on every task.
+* Both default to `1`, which processes every video in a single task.
+* Set `ffmpeg_thread_cnt` to match `--cpus-per-task`. It defaults to `0`,
+  which lets ffmpeg use every core on the physical node regardless of the
+  allocation.
+
+Videos and the non-video files that are symlinked alongside them are
+distributed separately, so each task receives a comparable share of the
+transcoding work rather than one task inheriting every video.
+
 ## Docker build for local testing
 In the same directory as the Dockerfile, run
 ```bash
@@ -92,7 +123,7 @@ docker build -t aind-behavior-video-transformation-local .
 
 Now a docker container can be run. You may need to change the mount locations and file permissions:
 ```bash
-docker run -v /home/local_videos/input_source:/mnt/input_source -v /home/local_videos/output_directory:/mnt/output_directory aind-behavior-video-transformation-local python -m aind_behavior_video_transformation.etl --job-settings '{"compression_requested": {"compression_enum": "gamma fix colorspace"}, "parallel_compression": true, "input_source": "/mnt/input_source", "output_directory": "/mnt/output_directory"}'
+docker run -v /home/local_videos/input_source:/mnt/input_source -v /home/local_videos/output_directory:/mnt/output_directory aind-behavior-video-transformation-local python -m aind_behavior_video_transformation.etl --job-settings '{"compression_requested": {"compression_enum": "gamma fix colorspace"}, "input_source": "/mnt/input_source", "output_directory": "/mnt/output_directory"}'
 ```
 
 ## Development
