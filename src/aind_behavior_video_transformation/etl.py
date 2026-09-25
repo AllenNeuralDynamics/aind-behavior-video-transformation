@@ -1,6 +1,7 @@
 """Module that defines the ETL class for behavior video transformations."""
 
 import logging
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from aind_behavior_video_transformation.transform_videos import (
     convert_video,
 )
 
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
