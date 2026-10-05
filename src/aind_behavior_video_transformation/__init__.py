@@ -1,6 +1,6 @@
 """Init package"""
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 from aind_behavior_video_transformation.etl import (  # noqa F401
     BehaviorVideoJob,
