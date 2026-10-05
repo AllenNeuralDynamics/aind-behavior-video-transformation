@@ -115,6 +115,14 @@ Videos and the non-video files that are symlinked alongside them are
 distributed separately, so each task receives a comparable share of the
 transcoding work rather than one task inheriting every video.
 
+### Deprecated settings
+
+`parallel_compression` is deprecated. It is still accepted, so existing job
+settings continue to validate, but it no longer has any effect and will be
+removed in a future release. Compression now runs sequentially within a task,
+and parallelism comes from the scheduler running one task per partition. Use
+`num_partitions` and `partition_number` instead.
+
 ## Docker build for local testing
 In the same directory as the Dockerfile, run
 ```bash

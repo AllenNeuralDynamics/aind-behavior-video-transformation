@@ -76,6 +76,15 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         description="If set, filter file paths based on regex pattern.",
     )
 
+    parallel_compression: bool | None = Field(
+        default=None,
+        description=(
+            "Deprecated and ignored. Parallelism now comes from running one "
+            "task per partition; set num_partitions and partition_number "
+            "instead. This field will be removed in a future release."
+        ),
+    )
+
     partition_number: int = Field(
         default=1,
         ge=1,
