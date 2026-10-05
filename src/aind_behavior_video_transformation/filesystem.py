@@ -6,6 +6,8 @@ from os import symlink, walk
 from os.path import relpath
 from pathlib import Path
 
+from aind_video_utils import VIDEO_EXTENSIONS
+
 
 def likely_video_file(file: Path) -> bool:
     """
@@ -21,17 +23,7 @@ def likely_video_file(file: Path) -> bool:
     bool
         True if the file suffix indicates it is a video file, False otherwise.
     """
-    return file.suffix in set(
-        [
-            ".mp4",
-            ".avi",
-            ".mov",
-            ".mkv",
-            ".flv",
-            ".wmv",
-            ".webm",
-        ]
-    )
+    return file.suffix.lower() in VIDEO_EXTENSIONS
 
 
 def build_overrides_dict(video_comp_pairs, job_in_dir_path):
@@ -57,13 +49,13 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
     if video_comp_pairs:
         for video_name, comp_req in video_comp_pairs:
             video_path = Path(video_name)
+
             # Figure out how video path was passed, convert to absolute
-            if video_path.is_absolute():
-                in_path = video_path
-            elif video_path.exists():
-                in_path = video_path.resolve()
+            if video_path.is_absolute() or video_path.exists():
+                candidate = video_path
             else:
-                in_path = (job_in_dir_path / video_path).resolve()
+                candidate = job_in_dir_path / video_path
+            in_path = candidate.parent.resolve() / candidate.name
             # Set overrides for the video path
             override_arg_set = comp_req.determine_ffmpeg_arg_set()
             # If it is a directory, set overrides for all subdirectories
@@ -81,17 +73,52 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
     return overrides
 
 
+def create_symlinks(symlink_args: list[tuple[Path, Path]]) -> None:
+    """
+    Creates symbolic links for the given source and destination pairs.
+
+    Kept separate from discovery so a partitioned job can have each node
+    create only its own share. Every node must run discovery to learn what
+    its partition holds, so creating links there means every node races to
+    create every link, and the loser raises FileExistsError.
+
+    Parameters
+    ----------
+    symlink_args : list of tuple
+        Pairs of (source path, destination path).
+
+    Returns
+    -------
+    None
+    """
+    for src_path, out_path in symlink_args:
+        # is_symlink() first: exists() follows the link, so a dangling
+        # symlink from an earlier run looks absent and then fails to create.
+        if out_path.is_symlink() or out_path.exists():
+            logging.warning(f"Output path {out_path} already exists!")
+            continue
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        symlink(src_path, out_path)
+
+
 def transform_directory(
     input_dir: Path,
     output_dir: Path,
     arg_set,
     overrides=dict(),
     file_filter_pattern: str | None = None,
-) -> list[tuple[Path, Path, tuple[str, str] | None]]:
+) -> tuple[
+    list[tuple[Path, Path, tuple[str, str] | None]],
+    list[tuple[Path, Path]],
+]:
     """
-    Transforms all video files in a directory and its subdirectories,
-    and creates symbolic links for non-video files. Subdirectories are
-    created as needed.
+    Discovers the work to be done under a directory and its subdirectories.
+    Output subdirectories are created as needed.
+
+    This only discovers. No videos are transformed and no symbolic links
+    are created, so that every node of a partitioned job can call it and
+    then act on its own partition alone. Pass the second return value to
+    create_symlinks to make the links.
 
     Parameters
     ----------
@@ -112,10 +139,13 @@ def transform_directory(
 
     Returns
     -------
-    List of tuples containing convert_video arguments.
+    A tuple of two lists. The first holds convert_video arguments, one per
+    video file. The second holds (source, destination) pairs for the
+    non-video files, which are to be symlinked rather than transformed.
     """
 
     convert_video_args = []
+    symlink_args = []
     for root, dirs, files in walk(input_dir, followlinks=True):
         root_path = Path(root)
         in_relpath = relpath(root, input_dir)
@@ -138,10 +168,6 @@ def transform_directory(
                 convert_video_args.append((file_path, dst_dir, this_arg_set))
 
             else:
-                out_path = dst_dir / file_name
-                if out_path.exists():
-                    logging.warning(f"Output path {out_path} already exists!")
-                    continue
-                symlink(file_path, out_path)
+                symlink_args.append((file_path, dst_dir / file_name))
 
-    return convert_video_args
+    return convert_video_args, symlink_args

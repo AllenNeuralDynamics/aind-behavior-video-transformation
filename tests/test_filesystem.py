@@ -1,10 +1,14 @@
 """Tests methods in filesystem module."""
 
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
-from aind_behavior_video_transformation.filesystem import transform_directory
+from aind_behavior_video_transformation.filesystem import (
+    create_symlinks,
+    transform_directory,
+)
 
 
 class TestModule(unittest.TestCase):
@@ -94,7 +98,21 @@ class TestModule(unittest.TestCase):
                 self.example_ffmpeg_args,
             ),
         ]
-        actual_convert_video_args = transform_directory(
+        expected_symlink_args = [
+            (
+                Path("behavior-videos") / "FaceCamera" / "metadata.csv",
+                Path("output_directory") / "FaceCamera" / "metadata.csv",
+            ),
+            (
+                Path("behavior-videos") / "FrontCamera" / "metadata.csv",
+                Path("output_directory") / "FrontCamera" / "metadata.csv",
+            ),
+            (
+                Path("behavior-videos") / "SideCamera" / "metadata.csv",
+                Path("output_directory") / "SideCamera" / "metadata.csv",
+            ),
+        ]
+        actual_convert_video_args, actual_symlink_args = transform_directory(
             job_in_dir_path,
             job_out_dir_path,
             ffmpeg_arg_set,
@@ -104,22 +122,11 @@ class TestModule(unittest.TestCase):
         self.assertEqual(
             expected_convert_video_args, actual_convert_video_args
         )
-        mock_symlink.assert_has_calls(
-            [
-                call(
-                    Path("behavior-videos") / "FaceCamera" / "metadata.csv",
-                    Path("output_directory") / "FaceCamera" / "metadata.csv",
-                ),
-                call(
-                    Path("behavior-videos") / "FrontCamera" / "metadata.csv",
-                    Path("output_directory") / "FrontCamera" / "metadata.csv",
-                ),
-                call(
-                    Path("behavior-videos") / "SideCamera" / "metadata.csv",
-                    Path("output_directory") / "SideCamera" / "metadata.csv",
-                ),
-            ]
-        )
+        self.assertEqual(expected_symlink_args, actual_symlink_args)
+        # Discovery must not touch the filesystem: every node of a
+        # partitioned job runs it, so creating links here would have them
+        # all racing to create the same ones.
+        mock_symlink.assert_not_called()
         mock_mkdir.assert_has_calls(
             [
                 call(parents=True, exist_ok=True),
@@ -154,7 +161,17 @@ class TestModule(unittest.TestCase):
                 self.example_ffmpeg_args,
             )
         ]
-        actual_convert_video_args = transform_directory(
+        expected_symlink_args = [
+            (
+                Path("behavior-videos")
+                / "TopCamera"
+                / "TopCamera_2025-05-13T20-00-00.csv",
+                Path("output_directory")
+                / "TopCamera"
+                / "TopCamera_2025-05-13T20-00-00.csv",
+            )
+        ]
+        actual_convert_video_args, actual_symlink_args = transform_directory(
             job_in_dir_path,
             job_out_dir_path,
             ffmpeg_arg_set,
@@ -164,19 +181,46 @@ class TestModule(unittest.TestCase):
         self.assertEqual(
             expected_convert_video_args, actual_convert_video_args
         )
-        mock_symlink.assert_has_calls(
-            [
-                call(
-                    Path("behavior-videos")
-                    / "TopCamera"
-                    / "TopCamera_2025-05-13T20-00-00.csv",
-                    Path("output_directory")
-                    / "TopCamera"
-                    / "TopCamera_2025-05-13T20-00-00.csv",
-                )
-            ]
-        )
+        self.assertEqual(expected_symlink_args, actual_symlink_args)
+        mock_symlink.assert_not_called()
         mock_mkdir.assert_has_calls([call(parents=True, exist_ok=True)])
+
+    def test_create_symlinks(self):
+        """Tests create_symlinks makes the requested links."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            src_path = temp_path / "metadata.csv"
+            src_path.write_text("data")
+            out_path = temp_path / "out" / "metadata.csv"
+
+            create_symlinks([(src_path, out_path)])
+
+            self.assertTrue(out_path.is_symlink())
+            self.assertEqual("data", out_path.read_text())
+
+    def test_create_symlinks_skips_existing(self):
+        """Tests an existing destination is skipped, not an error.
+
+        Reruns of a job, and dangling links left by an earlier run, must
+        not abort the whole partition.
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            src_path = temp_path / "metadata.csv"
+            src_path.write_text("data")
+            out_path = temp_path / "metadata_link.csv"
+
+            create_symlinks([(src_path, out_path)])
+            # Second call must be a no-op rather than FileExistsError
+            create_symlinks([(src_path, out_path)])
+            self.assertTrue(out_path.is_symlink())
+
+            # A dangling link reads as absent to exists(), so it is
+            # checked with is_symlink() first
+            src_path.unlink()
+            self.assertFalse(out_path.exists())
+            create_symlinks([(src_path, out_path)])
+            self.assertTrue(out_path.is_symlink())
 
 
 if __name__ == "__main__":
