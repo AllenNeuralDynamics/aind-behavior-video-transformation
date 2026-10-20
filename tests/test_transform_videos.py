@@ -19,7 +19,9 @@ from aind_behavior_video_transformation import (
     CompressionEnum,
     CompressionRequest,
 )
+from aind_behavior_video_transformation import transform_videos
 from aind_behavior_video_transformation.etl import _format_conversion_error
+from aind_behavior_video_transformation.transform_videos import convert_video
 
 
 class TestJobSettings(unittest.TestCase):
@@ -416,6 +418,52 @@ class TestPreviews(unittest.TestCase):
         self._camera(metadata_rows=self.clip_frames - 1)
         with self.assertRaisesRegex(RuntimeError, "rows"):
             self._run()
+
+    def test_metadata_without_reference_time_fails_the_job(self):
+        """Its producer has to hear that the metadata is unusable."""
+        self._camera()
+        (self.in_path / "BodyCamera" / "metadata.csv").write_text(
+            "".join(f"{n}\n" for n in range(self.clip_frames + 1))
+        )
+        with self.assertRaisesRegex(RuntimeError, "ReferenceTime"):
+            self._run()
+
+    def test_thread_count_reaches_every_preset_codec(self):
+        """aind-video-utils caps the decoder, filters and each encoder."""
+        self._camera()
+        with patch.object(
+            transform_videos,
+            "transcode_video",
+            wraps=transform_videos.transcode_video,
+        ) as spy:
+            self._run(ffmpeg_thread_cnt=2)
+        self.assertEqual(2, spy.call_args.kwargs["threads"])
+
+
+class TestUserDefinedThreads(unittest.TestCase):
+    """Tests ffmpeg_thread_cnt on user-defined encodes."""
+
+    @patch("aind_behavior_video_transformation.transform_videos.subprocess")
+    def test_threads_bind_the_decoder_and_encoder(self, mock_subprocess):
+        """A count in the user's own options still wins."""
+        convert_video(
+            Path("in.avi"),
+            Path("out"),
+            ("", "-c:v libx264 -threads 1"),
+            ffmpeg_thread_cnt=4,
+        )
+        cmd = mock_subprocess.run.call_args.args[0]
+        before_input, after_input = (
+            cmd[: cmd.index("-i")],
+            cmd[cmd.index("-i") + 2:],
+        )
+        self.assertEqual(
+            ["-filter_threads", "4", "-threads", "4"], before_input[-4:]
+        )
+        self.assertEqual(
+            ["-threads", "4", "-c:v", "libx264", "-threads", "1"],
+            after_input[:-1],
+        )
 
 
 class TestFormatConversionError(unittest.TestCase):

@@ -156,7 +156,8 @@ def convert_video(
         An encoding profile, a tuple of input and output arguments for
         ffmpeg, or None to create a symlink to the original video.
     ffmpeg_thread_cnt : int
-        Number of ffmpeg threads; 0 lets ffmpeg choose.
+        Threads for each of ffmpeg's decoder, filters and encoders; 0 lets
+        ffmpeg choose.
     write_previews : bool
         Whether a video encoded with a profile also gets a preview, its
         preview metadata, and a poster. These take the spec's names
@@ -210,12 +211,19 @@ def convert_video(
         return str(out_path)
 
     input_args, output_args = encoding
+    # -threads binds the codec of the input or output it precedes; placed
+    # ahead of the user's options, so a count of theirs wins.
+    codec_threads = (
+        ["-threads", str(ffmpeg_thread_cnt)] if ffmpeg_thread_cnt > 0 else []
+    )
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
     if ffmpeg_thread_cnt > 0:
-        ffmpeg_command.extend(["-threads", str(ffmpeg_thread_cnt)])
+        ffmpeg_command.extend(["-filter_threads", str(ffmpeg_thread_cnt)])
+    ffmpeg_command.extend(codec_threads)
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))
     ffmpeg_command.extend(["-i", str(video_path)])
+    ffmpeg_command.extend(codec_threads)
     if output_args:
         ffmpeg_command.extend(shlex.split(output_args))
     ffmpeg_command.append(str(out_path))
