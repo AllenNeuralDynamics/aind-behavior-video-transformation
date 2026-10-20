@@ -23,6 +23,7 @@ from aind_behavior_video_transformation.filesystem import (
 )
 from aind_behavior_video_transformation.transform_videos import (
     CompressionRequest,
+    Encoding,
     convert_video,
 )
 
@@ -30,13 +31,24 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
-def _format_ffmpeg_error(video_path: Path, exc: CalledProcessError) -> str:
-    """Format an ffmpeg ``CalledProcessError`` as a single log record body.
+# What convert_video raises for a video it could not convert, as opposed to
+# a bug: ffmpeg failing, dropped frames, or a metadata.csv unfit for the
+# preview metadata.
+_CONVERSION_ERRORS = (CalledProcessError, RuntimeError, ValueError)
 
-    The format keeps each piece on its own line so ffmpeg stderr is
-    clearly visible to readers and to log aggregators.
+
+def _format_conversion_error(video_path: Path, exc: Exception) -> str:
+    """Format a conversion failure as a single log record body.
+
+    The format keeps each piece of an ffmpeg failure on its own line so its
+    stderr is clearly visible to readers and to log aggregators.
     """
-    stderr = (exc.stderr or "(no stderr captured)").rstrip("\n")
+    if not isinstance(exc, CalledProcessError):
+        return f"Conversion failed for {video_path}\n{exc}"
+    stderr = exc.stderr or "(no stderr captured)"
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode(errors="replace")
+    stderr = stderr.rstrip("\n")
     return (
         f"FFmpeg conversion failed for {video_path}\n"
         f"Command: {shlex.join(exc.cmd)}\n"
@@ -70,6 +82,13 @@ class BehaviorVideoJobSettings(BasicJobSettings):
 
     ffmpeg_thread_cnt: int = Field(
         default=0, description="Number of threads per ffmpeg compression job."
+    )
+    write_previews: bool = Field(
+        default=True,
+        description=(
+            "Also write a preview video, its preview metadata, and a poster "
+            "image beside each video compressed with a preset."
+        ),
     )
     file_filter: str | None = Field(
         default=None,
@@ -135,16 +154,17 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
     def _run_serial(
         self,
-        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
-    ) -> list[tuple[Path, CalledProcessError]]:
+        convert_video_args: list[tuple[Path, Path, Encoding]],
+    ) -> list[tuple[Path, Exception]]:
         """Run conversions one at a time, collecting failures."""
-        errors: list[tuple[Path, CalledProcessError]] = []
+        errors: list[tuple[Path, Exception]] = []
         thread_cnt = self.job_settings.ffmpeg_thread_cnt
+        write_previews = self.job_settings.write_previews
         for params in convert_video_args:
             video_path = params[0]
             try:
-                result = convert_video(*params, thread_cnt)
-            except CalledProcessError as exc:
+                result = convert_video(*params, thread_cnt, write_previews)
+            except _CONVERSION_ERRORS as exc:
                 errors.append((video_path, exc))
             else:
                 logger.info("FFmpeg job completed: %s", result)
@@ -152,7 +172,7 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
 
     def _run_compression(
         self,
-        convert_video_args: list[tuple[Path, Path, tuple[str, str] | None]],
+        convert_video_args: list[tuple[Path, Path, Encoding]],
     ) -> None:
         """
         Runs CompressionRequests at the specified paths, sequentially within
@@ -164,12 +184,13 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
             return
 
         formatted = [
-            _format_ffmpeg_error(video_path, exc) for video_path, exc in errors
+            _format_conversion_error(video_path, exc)
+            for video_path, exc in errors
         ]
         for block in formatted:
             logger.error(block)
         raise RuntimeError(
-            f"{len(errors)} ffmpeg job(s) failed:\n\n" + "\n\n".join(formatted)
+            f"{len(errors)} conversion(s) failed:\n\n" + "\n\n".join(formatted)
         )
 
     @staticmethod
@@ -222,14 +243,12 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         job_in_dir_path = self.job_settings.input_source.resolve()
         overrides = build_overrides_dict(video_comp_pairs, job_in_dir_path)
 
-        ffmpeg_arg_set = (
-            self.job_settings.compression_requested.determine_ffmpeg_arg_set()
-        )
+        encoding = self.job_settings.compression_requested.determine_encoding()
         file_filter = self.job_settings.file_filter
         convert_video_args, symlink_args = transform_directory(
             job_in_dir_path,
             job_out_dir_path,
-            ffmpeg_arg_set,
+            encoding,
             overrides,
             file_filter,
         )
@@ -253,9 +272,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         this_partition = self._partition_args(
             convert_video_args, num_partitions
         )[partition_number - 1]
-        these_symlinks = self._partition_args(
-            symlink_args, num_partitions
-        )[partition_number - 1]
+        these_symlinks = self._partition_args(symlink_args, num_partitions)[
+            partition_number - 1
+        ]
 
         logger.info(
             "Partition %d/%d: %d of %d videos, %d of %d symlinks",

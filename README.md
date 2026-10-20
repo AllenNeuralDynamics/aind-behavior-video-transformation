@@ -115,6 +115,29 @@ Videos and the non-video files that are symlinked alongside them are
 distributed separately, so each task receives a comparable share of the
 transcoding work rather than one task inheriting every video.
 
+### Preview videos and posters
+
+Each video compressed with a preset also gets the derivatives that the
+[behavior video standard](https://allenneuraldynamics.github.io/aind-file-standards/file_formats/behavior_videos/#preview-videos-and-poster-images)
+describes. They are written by the same ffmpeg process as the video, so they
+land on the same task:
+
+* `preview.mp4`: every N-th frame, with N chosen for a preview of 25 to 35 fps,
+  for streaming in a browser.
+* `preview_metadata.parquet`: the rows of `metadata.csv` for the frames the
+  preview keeps. It is written only when a `metadata.csv` sits beside the
+  video, and the job fails if `metadata.csv` has a row count other than the
+  video's frame count.
+* `poster.jpg`: the middle frame as an sRGB JPEG. `no gamma` compression writes
+  no poster.
+
+These names apply to a video named `video.<ext>`, as the standard names it.
+Any other video takes its own stem, so `BottomCamera.avi` gets
+`BottomCamera_preview.mp4` and `BottomCamera_poster.jpg`, and no preview
+metadata, since `metadata.csv` describes `video.<ext>` alone. `user defined`
+and `no compression` write no derivatives, and `"write_previews": false` turns
+them off for every video.
+
 ### Deprecated settings
 
 `parallel_compression` is deprecated. It is still accepted, so existing job
