@@ -10,6 +10,7 @@ from os import symlink, unlink
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pyarrow.parquet as pq
 from aind_data_transformation.core import JobResponse
 
 from aind_behavior_video_transformation import (
@@ -18,6 +19,9 @@ from aind_behavior_video_transformation import (
     CompressionEnum,
     CompressionRequest,
 )
+from aind_behavior_video_transformation import transform_videos
+from aind_behavior_video_transformation.etl import _format_conversion_error
+from aind_behavior_video_transformation.transform_videos import convert_video
 
 
 class TestJobSettings(unittest.TestCase):
@@ -287,6 +291,199 @@ class TestBehaviorVideoJob(unittest.TestCase):
                     for i in range(len(error_blocks) - 1):
                         error_diff = error_blocks[i + 1] - error_blocks[i]
                         self.assertTrue(error_diff >= 9)
+
+
+def _nb_frames(video: Path) -> int:
+    """Count the frames in a video."""
+    out = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "csv=p=0",
+            str(video),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return int(out.stdout)
+
+
+class TestPreviews(unittest.TestCase):
+    """Tests the preview, preview metadata and poster beside each video."""
+
+    test_vid_path = Path("tests/test_video_in_dir/clip.mp4").resolve()
+    clip_frames = 501
+    derivative_names = {
+        "preview.mp4",
+        "preview_metadata.parquet",
+        "poster.jpg",
+    }
+
+    def setUp(self):
+        """Make temporary input and output directories."""
+        in_dir = tempfile.TemporaryDirectory()
+        out_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(in_dir.cleanup)
+        self.addCleanup(out_dir.cleanup)
+        self.in_path = Path(in_dir.name)
+        self.out_path = Path(out_dir.name)
+
+    def _camera(self, video_name="video.mp4", metadata_rows=None):
+        """Make a camera folder holding the clip and maybe a metadata.csv."""
+        camera = self.in_path / "BodyCamera"
+        camera.mkdir()
+        symlink(self.test_vid_path, camera / video_name)
+        if metadata_rows is not None:
+            (camera / "metadata.csv").write_text(
+                "ReferenceTime,CameraFrameNumber\n"
+                + "".join(f"{n / 500},{n}\n" for n in range(metadata_rows))
+            )
+        return self.out_path / "BodyCamera"
+
+    def _run(self, compression_enum=CompressionEnum.DEFAULT, **settings):
+        """Run a job over the input directory."""
+        job_settings = BehaviorVideoJobSettings(
+            input_source=self.in_path,
+            output_directory=self.out_path,
+            compression_requested=CompressionRequest(
+                compression_enum=compression_enum
+            ),
+            **settings,
+        )
+        with patch("aind_behavior_video_transformation.etl.time") as mock:
+            return helper_run_compression_job(job_settings, mock)
+
+    def _names(self, folder: Path) -> set:
+        """Names of the files in a folder."""
+        return {p.name for p in folder.iterdir()}
+
+    def test_spec_layout_gets_every_derivative(self):
+        """video.mp4 with a metadata.csv gets the spec's three files."""
+        out = self._camera(metadata_rows=self.clip_frames)
+        self._run()
+        self.assertTrue(self.derivative_names <= self._names(out))
+        rows = pq.read_table(out / "preview_metadata.parquet").num_rows
+        self.assertEqual(_nb_frames(out / "preview.mp4"), rows)
+        self.assertLess(rows, self.clip_frames)
+
+    def test_other_names_take_the_video_stem(self):
+        """A video not named video.* names its derivatives after itself.
+
+        metadata.csv belongs to video.* alone, so no preview metadata.
+        """
+        out = self._camera("clip.mp4", metadata_rows=self.clip_frames)
+        self._run()
+        names = self._names(out)
+        self.assertTrue({"clip_preview.mp4", "clip_poster.jpg"} <= names)
+        self.assertFalse(any(n.endswith(".parquet") for n in names))
+
+    def test_no_metadata_csv_still_gets_preview_and_poster(self):
+        """Only the preview metadata needs metadata.csv."""
+        out = self._camera()
+        self._run()
+        self.assertEqual(
+            {"video.mp4", "preview.mp4", "poster.jpg"}, self._names(out)
+        )
+
+    def test_write_previews_false_writes_only_the_video(self):
+        """write_previews=False turns every derivative off."""
+        out = self._camera(metadata_rows=self.clip_frames)
+        self._run(write_previews=False)
+        self.assertEqual({"video.mp4", "metadata.csv"}, self._names(out))
+
+    def test_no_gamma_encoding_gets_no_poster(self):
+        """Its chain needs no known transfer, which the poster does."""
+        out = self._camera(metadata_rows=self.clip_frames)
+        self._run(CompressionEnum.NO_GAMMA_ENCODING)
+        names = self._names(out)
+        self.assertIn("preview.mp4", names)
+        self.assertNotIn("poster.jpg", names)
+
+    def test_no_compression_gets_no_derivatives(self):
+        """A symlinked video is not encoded, so it gets no derivatives."""
+        out = self._camera(metadata_rows=self.clip_frames)
+        self._run(CompressionEnum.NO_COMPRESSION)
+        self.assertFalse(self.derivative_names & self._names(out))
+
+    def test_metadata_row_mismatch_fails_the_job(self):
+        """Preview metadata rows must line up with the preview's frames."""
+        self._camera(metadata_rows=self.clip_frames - 1)
+        with self.assertRaisesRegex(RuntimeError, "rows"):
+            self._run()
+
+    def test_metadata_without_reference_time_fails_the_job(self):
+        """Its producer has to hear that the metadata is unusable."""
+        self._camera()
+        (self.in_path / "BodyCamera" / "metadata.csv").write_text(
+            "".join(f"{n}\n" for n in range(self.clip_frames + 1))
+        )
+        with self.assertRaisesRegex(RuntimeError, "ReferenceTime"):
+            self._run()
+
+    def test_thread_count_reaches_every_preset_codec(self):
+        """aind-video-utils caps the decoder, filters and each encoder."""
+        self._camera()
+        with patch.object(
+            transform_videos,
+            "transcode_video",
+            wraps=transform_videos.transcode_video,
+        ) as spy:
+            self._run(ffmpeg_thread_cnt=2)
+        self.assertEqual(2, spy.call_args.kwargs["threads"])
+
+
+class TestUserDefinedThreads(unittest.TestCase):
+    """Tests ffmpeg_thread_cnt on user-defined encodes."""
+
+    @patch("aind_behavior_video_transformation.transform_videos.subprocess")
+    def test_threads_bind_the_decoder_and_encoder(self, mock_subprocess):
+        """A count in the user's own options still wins."""
+        convert_video(
+            Path("in.avi"),
+            Path("out"),
+            ("", "-c:v libx264 -threads 1"),
+            ffmpeg_thread_cnt=4,
+        )
+        cmd = mock_subprocess.run.call_args.args[0]
+        before_input, after_input = (
+            cmd[: cmd.index("-i")],
+            cmd[cmd.index("-i") + 2:],
+        )
+        self.assertEqual(
+            ["-filter_threads", "4", "-threads", "4"], before_input[-4:]
+        )
+        self.assertEqual(
+            ["-threads", "4", "-c:v", "libx264", "-threads", "1"],
+            after_input[:-1],
+        )
+
+
+class TestFormatConversionError(unittest.TestCase):
+    """Tests _format_conversion_error"""
+
+    def test_decodes_bytes_stderr(self):
+        """aind-video-utils raises with stderr as bytes."""
+        exc = subprocess.CalledProcessError(
+            1, ["ffmpeg"], stderr=b"[error] bad\n"
+        )
+        message = _format_conversion_error(Path("video.mp4"), exc)
+        self.assertIn("[error] bad\n--- end stderr ---", message)
+
+    def test_formats_other_errors(self):
+        """Frame-count and metadata failures carry no ffmpeg command."""
+        exc = RuntimeError("lost frames")
+        message = _format_conversion_error(Path("video.mp4"), exc)
+        self.assertEqual(
+            "Conversion failed for video.mp4\nlost frames", message
+        )
 
 
 if __name__ == "__main__":

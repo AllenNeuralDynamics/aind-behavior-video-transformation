@@ -8,6 +8,8 @@ from pathlib import Path
 
 from aind_video_utils import VIDEO_EXTENSIONS
 
+from aind_behavior_video_transformation.transform_videos import Encoding
+
 
 def likely_video_file(file: Path) -> bool:
     """
@@ -42,7 +44,7 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
     -------
     dict
         A dictionary where keys are video paths (either files or directories)
-        and values are the override argument sets determined by the
+        and values are the override encodings determined by the
         CompressionRequest objects.
     """
     overrides = dict()
@@ -57,7 +59,7 @@ def build_overrides_dict(video_comp_pairs, job_in_dir_path):
                 candidate = job_in_dir_path / video_path
             in_path = candidate.parent.resolve() / candidate.name
             # Set overrides for the video path
-            override_arg_set = comp_req.determine_ffmpeg_arg_set()
+            override_arg_set = comp_req.determine_encoding()
             # If it is a directory, set overrides for all subdirectories
             if in_path.is_dir():
                 overrides[in_path] = override_arg_set
@@ -108,7 +110,7 @@ def transform_directory(
     overrides=dict(),
     file_filter_pattern: str | None = None,
 ) -> tuple[
-    list[tuple[Path, Path, tuple[str, str] | None]],
+    list[tuple[Path, Path, Encoding]],
     list[tuple[Path, Path]],
 ]:
     """
@@ -127,8 +129,8 @@ def transform_directory(
     output_dir : Path
         The directory where the transformed files and symbolic links will be
         saved.
-    arg_set : Any
-        The set of arguments to be used for video transformation.
+    arg_set : Encoding
+        The encoding to be used for video transformation.
     overrides : dict, optional
         A dictionary containing overrides for specific directories or files.
         Keys are Paths and values are argument sets. Default is an empty

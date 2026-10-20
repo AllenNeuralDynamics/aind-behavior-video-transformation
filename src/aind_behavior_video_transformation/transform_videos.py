@@ -1,9 +1,11 @@
 """Module to handle transforming behavior videos.
 
-Encoding profiles are provided by ``aind-video-utils``.  This module adds
-the ETL-layer concepts that don't map to encoding profiles:
-``NO_COMPRESSION`` (symlink), ``USER_DEFINED`` (arbitrary ffmpeg strings),
-and the ``CompressionRequest`` Pydantic model used by job settings.
+Encoding profiles are provided by ``aind-video-utils``, which also writes
+the preview, preview metadata and poster beside each video encoded with
+one.  This module adds the ETL-layer concepts that don't map to encoding
+profiles: ``NO_COMPRESSION`` (symlink), ``USER_DEFINED`` (arbitrary ffmpeg
+strings), and the ``CompressionRequest`` Pydantic model used by job
+settings.
 """
 
 import logging
@@ -12,13 +14,14 @@ import subprocess
 from enum import Enum
 from os import symlink
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from aind_video_utils.encoding import (
     OFFLINE_8BIT,
     EncodingProfile,
     with_setparams,
 )
+from aind_video_utils.transcode import transcode_video
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,10 @@ class CompressionEnum(Enum):
     NO_COMPRESSION = "no compression"
 
 
+_NO_GAMMA_PROFILE = OFFLINE_8BIT.replace(
+    video_filters="scale=out_range=tv:sws_dither=none,format=yuv420p",
+)
+
 # Map standard compression presets to aind-video-utils encoding profiles.
 # ``DEFAULT`` aliases ``GAMMA_ENCODING`` so callers can omit a preset.
 _COMPRESSION_PROFILES: dict[CompressionEnum, EncodingProfile] = {
@@ -45,10 +52,25 @@ _COMPRESSION_PROFILES: dict[CompressionEnum, EncodingProfile] = {
     CompressionEnum.GAMMA_ENCODING_FIX_COLORSPACE: with_setparams(
         OFFLINE_8BIT
     ),
-    CompressionEnum.NO_GAMMA_ENCODING: OFFLINE_8BIT.replace(
-        video_filters="scale=out_range=tv:sws_dither=none,format=yuv420p",
-    ),
+    CompressionEnum.NO_GAMMA_ENCODING: _NO_GAMMA_PROFILE,
 }
+
+# The poster converts the source's transfer to sRGB, so on a source whose
+# transfer ffmpeg cannot resolve it fails, taking the whole encode with it.
+# The gamma-encoding presets already need a known transfer; no gamma does not.
+_POSTERLESS_PROFILES = (_NO_GAMMA_PROFILE,)
+
+# The spec names a camera folder's video ``video.<ext>``, and its
+# ``metadata.csv`` describes that video's frames and no other's.
+_SPEC_VIDEO_STEM = "video"
+_SPEC_METADATA_FILENAME = "metadata.csv"
+
+PREVIEW_FPS = 30.0
+
+# What to do with one video: encode it with a profile, which also writes
+# its derivatives; run ffmpeg with user-defined (input, output) options; or
+# symlink it unchanged.
+Encoding = Union[EncodingProfile, Tuple[str, str], None]
 
 
 class CompressionRequest(BaseModel):
@@ -66,7 +88,7 @@ class CompressionRequest(BaseModel):
 
     Methods
     -------
-    determine_ffmpeg_arg_set() -> Optional[Tuple[str, str]]
+    determine_encoding() -> Encoding
     """
 
     compression_enum: CompressionEnum = Field(
@@ -80,26 +102,25 @@ class CompressionRequest(BaseModel):
         default=None, description="User defined ffmpeg output options"
     )
 
-    def determine_ffmpeg_arg_set(
-        self,
-    ) -> Optional[Tuple[str, str]]:
+    def determine_encoding(self) -> Encoding:
         """
-        Determines the appropriate set of FFmpeg arguments based on the
-        compression requirements.
+        Determines how to encode a video based on the compression
+        requirements.
 
         Returns
         -------
-        Optional[Tuple[str, str]]
-            A tuple containing the FFmpeg input and output options if
-            compression is required, or None if no compression is needed.
+        Encoding
+            The aind-video-utils encoding profile for a preset, the FFmpeg
+            input and output options for user-defined compression, or None
+            if no compression is needed.
 
         Notes
         -----
         - If `compression_enum` is `NO_COMPRESSION`, the method returns None.
         - If `compression_enum` is `USER_DEFINED`, the method returns
             user-defined FFmpeg options.
-        - For other compression types, the method uses aind-video-utils
-            encoding profiles.
+        - For other compression types, the method returns an
+            aind-video-utils encoding profile.
         - If `compression_enum` is `DEFAULT`, it defaults to
             `GAMMA_ENCODING`.
         """
@@ -112,18 +133,15 @@ class CompressionRequest(BaseModel):
                 self.user_ffmpeg_output_options or "",
             )
 
-        profile = _COMPRESSION_PROFILES[comp_req]
-        return (
-            shlex.join(profile.ffmpeg_input_args()),
-            shlex.join(profile.ffmpeg_output_args()),
-        )
+        return _COMPRESSION_PROFILES[comp_req]
 
 
 def convert_video(
     video_path: Path,
     output_dir: Path,
-    arg_set: Optional[Tuple[str, str]],
+    encoding: Encoding,
     ffmpeg_thread_cnt: int = 0,
+    write_previews: bool = True,
 ) -> str:
     """
     Converts a video to a specified format using ffmpeg.
@@ -134,10 +152,18 @@ def convert_video(
         The path to the input video file.
     output_dir : Path
         The destination directory where the converted video will be saved.
-    arg_set : tuple or None
-        A tuple containing input and output arguments for ffmpeg. If None, a
-        symlink to the original video is created.
-    ffmpeg_thread_cnt : set number of ffmpeg threads
+    encoding : Encoding
+        An encoding profile, a tuple of input and output arguments for
+        ffmpeg, or None to create a symlink to the original video.
+    ffmpeg_thread_cnt : int
+        Threads for each of ffmpeg's decoder, filters and encoders; 0 lets
+        ffmpeg choose.
+    write_previews : bool
+        Whether a video encoded with a profile also gets a preview, its
+        preview metadata, and a poster. These take the spec's names
+        beside ``video.mp4`` and the video's stem otherwise, as in
+        ``BottomCamera_preview.mp4``. The preview metadata is written only
+        for ``video.<ext>`` with a ``metadata.csv`` beside it.
 
     Returns
     -------
@@ -150,26 +176,54 @@ def convert_video(
         If ffmpeg exits with a non-zero return code.  The exception's
         ``cmd``, ``returncode``, and ``stderr`` attributes carry the
         full failure context for the caller to log.
-
-    Notes
-    -----
-    - If `arg_set` is None, the function creates a symlink to the original
-        video file.
+    RuntimeError
+        If a profile's encode loses frames, or ``metadata.csv`` has a row
+        count other than the video's frame count.
+    ValueError
+        If ``metadata.csv`` has no ``ReferenceTime`` column.
     """
 
     out_path = output_dir / f"{video_path.stem}.mp4"
 
-    if arg_set is None:
+    if encoding is None:
         symlink(video_path, out_path)
         return str(out_path)
 
-    input_args, output_args = arg_set
+    if isinstance(encoding, EncodingProfile):
+        metadata_csv = video_path.with_name(_SPEC_METADATA_FILENAME)
+        with_metadata = (
+            write_previews
+            and video_path.stem == _SPEC_VIDEO_STEM
+            and metadata_csv.is_file()
+        )
+        transcode_video(
+            video_path,
+            out_path,
+            profile=encoding,
+            # The presets carry the colour repair they intend; probing for
+            # more would change their primary output.
+            auto_fix_colorspace=False,
+            preview_fps=PREVIEW_FPS if write_previews else None,
+            metadata_csv=metadata_csv if with_metadata else None,
+            poster=write_previews and encoding not in _POSTERLESS_PROFILES,
+            threads=ffmpeg_thread_cnt or None,
+        )
+        return str(out_path)
+
+    input_args, output_args = encoding
+    # -threads binds the codec of the input or output it precedes; placed
+    # ahead of the user's options, so a count of theirs wins.
+    codec_threads = (
+        ["-threads", str(ffmpeg_thread_cnt)] if ffmpeg_thread_cnt > 0 else []
+    )
     ffmpeg_command = ["ffmpeg", "-y", "-v", "warning", "-hide_banner"]
     if ffmpeg_thread_cnt > 0:
-        ffmpeg_command.extend(["-threads", str(ffmpeg_thread_cnt)])
+        ffmpeg_command.extend(["-filter_threads", str(ffmpeg_thread_cnt)])
+    ffmpeg_command.extend(codec_threads)
     if input_args:
         ffmpeg_command.extend(shlex.split(input_args))
     ffmpeg_command.extend(["-i", str(video_path)])
+    ffmpeg_command.extend(codec_threads)
     if output_args:
         ffmpeg_command.extend(shlex.split(output_args))
     ffmpeg_command.append(str(out_path))
