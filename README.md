@@ -107,7 +107,8 @@ Notes:
 * `partition_number` is 1-based, so use `--array=1-N`, not `--array=0-(N-1)`.
 * `num_partitions` must match the array size and be identical on every task.
 * Both default to `1`, which processes every video in a single task.
-* Set `ffmpeg_thread_cnt` to match `--cpus-per-task`. It defaults to `0`,
+* Set `ffmpeg_thread_cnt` to match `--cpus-per-task`. It caps the threads of
+  ffmpeg's decoder, its filters and each of its encoders. It defaults to `0`,
   which lets ffmpeg use every core on the physical node regardless of the
   allocation.
 
@@ -126,10 +127,14 @@ land on the same task:
   for streaming in a browser.
 * `preview_metadata.parquet`: the rows of `metadata.csv` for the frames the
   preview keeps. It is written only when a `metadata.csv` sits beside the
-  video, and the job fails if `metadata.csv` has a row count other than the
-  video's frame count.
+  video.
 * `poster.jpg`: the middle frame as an sRGB JPEG. `no gamma` compression writes
   no poster.
+
+A derivative that cannot be made fails the job, so that a problem in the data
+is fixed where it is acquired rather than going unnoticed. That includes a
+`metadata.csv` without a `ReferenceTime` column, or with a row count other
+than the video's frame count.
 
 These names apply to a video named `video.<ext>`, as the standard names it.
 Any other video takes its own stem, so `BottomCamera.avi` gets

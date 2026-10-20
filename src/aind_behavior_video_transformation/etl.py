@@ -81,7 +81,11 @@ class BehaviorVideoJobSettings(BasicJobSettings):
     )
 
     ffmpeg_thread_cnt: int = Field(
-        default=0, description="Number of threads per ffmpeg compression job."
+        default=0,
+        description=(
+            "Threads for each of ffmpeg's decoder, filters and encoders; 0 "
+            "lets ffmpeg choose."
+        ),
     )
     write_previews: bool = Field(
         default=True,
@@ -272,9 +276,9 @@ class BehaviorVideoJob(GenericEtl[BehaviorVideoJobSettings]):
         this_partition = self._partition_args(
             convert_video_args, num_partitions
         )[partition_number - 1]
-        these_symlinks = self._partition_args(symlink_args, num_partitions)[
-            partition_number - 1
-        ]
+        these_symlinks = self._partition_args(
+            symlink_args, num_partitions
+        )[partition_number - 1]
 
         logger.info(
             "Partition %d/%d: %d of %d videos, %d of %d symlinks",
