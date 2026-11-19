@@ -134,14 +134,19 @@ land on the same task:
 A derivative that cannot be made fails the job, so that a problem in the data
 is fixed where it is acquired rather than going unnoticed. That includes a
 `metadata.csv` without a `ReferenceTime` column, or with a row count other
-than the video's frame count.
+than the video's frame count, both of which are caught before encoding. A
+video that fails leaves none of its outputs behind.
 
 These names apply to a video named `video.<ext>`, as the standard names it.
 Any other video takes its own stem, so `BottomCamera.avi` gets
 `BottomCamera_preview.mp4` and `BottomCamera_poster.jpg`, and no preview
-metadata, since `metadata.csv` describes `video.<ext>` alone. `user defined`
-and `no compression` write no derivatives, and `"write_previews": false` turns
-them off for every video.
+metadata, since `metadata.csv` describes `video.<ext>` alone; the log says so
+for each such video. `user defined` and `no compression` write no derivatives,
+and `"write_previews": false` turns them off for every video.
+
+The poster needs ffmpeg's `zscale` filter, which only an ffmpeg built with
+libzimg has. The Docker image's ffmpeg and Ubuntu's both have it; Homebrew's
+`ffmpeg` does not, so on a Mac install `ffmpeg-full` instead.
 
 ### Deprecated settings
 

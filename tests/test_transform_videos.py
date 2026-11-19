@@ -415,9 +415,19 @@ class TestPreviews(unittest.TestCase):
 
     def test_metadata_row_mismatch_fails_the_job(self):
         """Preview metadata rows must line up with the preview's frames."""
-        self._camera(metadata_rows=self.clip_frames - 1)
-        with self.assertRaisesRegex(RuntimeError, "rows"):
+        out = self._camera(metadata_rows=self.clip_frames - 1)
+        with self.assertRaisesRegex(RuntimeError, "nothing was encoded"):
             self._run()
+        self.assertFalse(
+            {"video.mp4", "preview.mp4", "poster.jpg"} & self._names(out)
+        )
+
+    def test_other_names_log_why_they_get_no_preview_metadata(self):
+        """A producer expecting the parquet can see why it is missing."""
+        self._camera("clip.mp4", metadata_rows=self.clip_frames)
+        with self.assertLogs(transform_videos.logger, "INFO") as logs:
+            self._run()
+        self.assertIn("clip.mp4 gets no preview metadata", logs.output[0])
 
     def test_metadata_without_reference_time_fails_the_job(self):
         """Its producer has to hear that the metadata is unusable."""
@@ -464,6 +474,26 @@ class TestUserDefinedThreads(unittest.TestCase):
             ["-threads", "4", "-c:v", "libx264", "-threads", "1"],
             after_input[:-1],
         )
+
+
+class TestUserDefinedFailure(unittest.TestCase):
+    """Tests a user-defined encode that ffmpeg fails."""
+
+    def test_partial_output_is_removed(self):
+        """A half-written video would pass for a finished one."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+
+            def fail_midway(cmd, **_):
+                Path(cmd[-1]).write_bytes(b"partial")
+                raise subprocess.CalledProcessError(1, cmd)
+
+            with patch.object(
+                transform_videos.subprocess, "run", side_effect=fail_midway
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    convert_video(Path("in.avi"), out_dir, ("", "-c:v x"))
+            self.assertEqual([], list(out_dir.iterdir()))
 
 
 class TestFormatConversionError(unittest.TestCase):
