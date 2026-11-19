@@ -34,7 +34,12 @@ logger = logging.getLogger(__name__)
 # What convert_video raises for a video it could not convert, as opposed to
 # a bug: ffmpeg failing, dropped frames, or a metadata.csv unfit for the
 # preview metadata.
-_CONVERSION_ERRORS = (CalledProcessError, RuntimeError, ValueError)
+_CONVERSION_ERRORS = (
+    CalledProcessError,
+    FileNotFoundError,
+    RuntimeError,
+    ValueError,
+)
 
 
 def _format_conversion_error(video_path: Path, exc: Exception) -> str:
@@ -91,7 +96,9 @@ class BehaviorVideoJobSettings(BasicJobSettings):
         default=True,
         description=(
             "Also write a preview video, its preview metadata, and a poster "
-            "image beside each video compressed with a preset."
+            "image beside each video compressed with a preset. Turning it "
+            "off also skips the checks on metadata.csv, so data that cannot "
+            "meet them can still be uploaded."
         ),
     )
     file_filter: str | None = Field(

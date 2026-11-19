@@ -385,13 +385,18 @@ class TestPreviews(unittest.TestCase):
         self.assertTrue({"clip_preview.mp4", "clip_poster.jpg"} <= names)
         self.assertFalse(any(n.endswith(".parquet") for n in names))
 
-    def test_no_metadata_csv_still_gets_preview_and_poster(self):
-        """Only the preview metadata needs metadata.csv."""
+    def test_spec_video_without_metadata_csv_fails_the_job(self):
+        """Its frame timing would be lost once the original is deleted."""
         out = self._camera()
-        self._run()
-        self.assertEqual(
-            {"video.mp4", "preview.mp4", "poster.jpg"}, self._names(out)
-        )
+        with self.assertRaisesRegex(RuntimeError, "no metadata.csv"):
+            self._run()
+        self.assertFalse(out.exists() and self._names(out))
+
+    def test_write_previews_false_uploads_without_metadata_csv(self):
+        """The opt-out lets data that cannot meet the checks through."""
+        out = self._camera()
+        self._run(write_previews=False)
+        self.assertEqual({"video.mp4"}, self._names(out))
 
     def test_write_previews_false_writes_only_the_video(self):
         """write_previews=False turns every derivative off."""
@@ -440,7 +445,7 @@ class TestPreviews(unittest.TestCase):
 
     def test_thread_count_reaches_every_preset_codec(self):
         """aind-video-utils caps the decoder, filters and each encoder."""
-        self._camera()
+        self._camera(metadata_rows=self.clip_frames)
         with patch.object(
             transform_videos,
             "transcode_video",

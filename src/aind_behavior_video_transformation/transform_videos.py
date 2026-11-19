@@ -165,7 +165,7 @@ def convert_video(
         preview metadata, and a poster. These take the spec's names
         beside ``video.mp4`` and the video's stem otherwise, as in
         ``BottomCamera_preview.mp4``. The preview metadata is written only
-        for ``video.<ext>`` with a ``metadata.csv`` beside it.
+        for ``video.<ext>``, from the ``metadata.csv`` beside it.
 
     Returns
     -------
@@ -184,6 +184,9 @@ def convert_video(
         encoding.
     ValueError
         If ``metadata.csv`` has no ``ReferenceTime`` column.
+    FileNotFoundError
+        If previews are written for ``video.<ext>`` and no ``metadata.csv``
+        sits beside it.
     """
 
     out_path = output_dir / f"{video_path.stem}.mp4"
@@ -194,17 +197,21 @@ def convert_video(
 
     if isinstance(encoding, EncodingProfile):
         metadata_csv = video_path.with_name(_SPEC_METADATA_FILENAME)
-        is_spec_video = video_path.stem == _SPEC_VIDEO_STEM
-        with_metadata = (
-            write_previews and is_spec_video and metadata_csv.is_file()
-        )
+        with_metadata = write_previews and video_path.stem == _SPEC_VIDEO_STEM
+        if with_metadata and not metadata_csv.is_file():
+            # The originals are deleted after upload, so frame timing missing
+            # now is lost; and the spec forbids a preview without its metadata.
+            raise FileNotFoundError(
+                f"{video_path} has no {_SPEC_METADATA_FILENAME} beside it, "
+                "which the behavior video standard requires. Set "
+                '"write_previews": false to upload it without previews.'
+            )
         if write_previews and not with_metadata:
             logger.info(
                 "%s gets no preview metadata: only video.<ext> has one, "
-                "from the %s beside it%s.",
+                "from the %s beside it.",
                 video_path,
                 _SPEC_METADATA_FILENAME,
-                ", which is missing" if is_spec_video else "",
             )
         transcode_video(
             video_path,

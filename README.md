@@ -126,16 +126,17 @@ land on the same task:
 * `preview.mp4`: every N-th frame, with N chosen for a preview of 25 to 35 fps,
   for streaming in a browser.
 * `preview_metadata.parquet`: the rows of `metadata.csv` for the frames the
-  preview keeps. It is written only when a `metadata.csv` sits beside the
-  video.
+  preview keeps.
 * `poster.jpg`: the middle frame as an sRGB JPEG. `no gamma` compression writes
   no poster.
 
 A derivative that cannot be made fails the job, so that a problem in the data
-is fixed where it is acquired rather than going unnoticed. That includes a
-`metadata.csv` without a `ReferenceTime` column, or with a row count other
-than the video's frame count, both of which are caught before encoding. A
-video that fails leaves none of its outputs behind.
+is fixed where it is acquired, before the originals are deleted. That includes
+a `video.<ext>` with no `metadata.csv` beside it, and a `metadata.csv` without
+a `ReferenceTime` column or with a row count other than the video's frame
+count, all of which are caught before encoding. A video that fails leaves none
+of its outputs behind. `"write_previews": false` skips these checks, for data
+that cannot meet them.
 
 These names apply to a video named `video.<ext>`, as the standard names it.
 Any other video takes its own stem, so `BottomCamera.avi` gets
