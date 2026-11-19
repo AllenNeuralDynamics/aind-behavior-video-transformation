@@ -146,6 +146,8 @@ def convert_video(
     """
     Converts a video to a specified format using ffmpeg.
 
+    A conversion that raises leaves none of the video's outputs behind.
+
     Parameters
     ----------
     video_path : Path
@@ -178,7 +180,8 @@ def convert_video(
         full failure context for the caller to log.
     RuntimeError
         If a profile's encode loses frames, or ``metadata.csv`` has a row
-        count other than the video's frame count.
+        count other than the video's frame count, which is checked before
+        encoding.
     ValueError
         If ``metadata.csv`` has no ``ReferenceTime`` column.
     """
@@ -191,11 +194,18 @@ def convert_video(
 
     if isinstance(encoding, EncodingProfile):
         metadata_csv = video_path.with_name(_SPEC_METADATA_FILENAME)
+        is_spec_video = video_path.stem == _SPEC_VIDEO_STEM
         with_metadata = (
-            write_previews
-            and video_path.stem == _SPEC_VIDEO_STEM
-            and metadata_csv.is_file()
+            write_previews and is_spec_video and metadata_csv.is_file()
         )
+        if write_previews and not with_metadata:
+            logger.info(
+                "%s gets no preview metadata: only video.<ext> has one, "
+                "from the %s beside it%s.",
+                video_path,
+                _SPEC_METADATA_FILENAME,
+                ", which is missing" if is_spec_video else "",
+            )
         transcode_video(
             video_path,
             out_path,
@@ -228,5 +238,12 @@ def convert_video(
         ffmpeg_command.extend(shlex.split(output_args))
     ffmpeg_command.append(str(out_path))
 
-    subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+    try:
+        subprocess.run(
+            ffmpeg_command, check=True, capture_output=True, text=True
+        )
+    except subprocess.CalledProcessError:
+        # A partial file would pass for a finished one.
+        out_path.unlink(missing_ok=True)
+        raise
     return str(out_path)
