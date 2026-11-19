@@ -43,7 +43,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aind-data-transformation", specifier = ">=0.1.0" },
-    { name = "aind-video-utils", extras = ["parquet"], specifier = ">=0.9.0" },
+    { name = "aind-video-utils", extras = ["parquet"], specifier = ">=0.12.0" },
     { name = "black", marker = "extra == 'dev'" },
     { name = "coverage", marker = "extra == 'dev'" },
     { name = "flake8", marker = "extra == 'dev'" },
@@ -69,16 +69,16 @@ wheels = [
 
 [[package]]
 name = "aind-video-utils"
-version = "0.9.0"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/e7/0e501ca18f296354763113a167a3c00dade08417d9208166fbed53d83049/aind_video_utils-0.9.0.tar.gz", hash = "sha256:8f7dbd7c91c8daa88d2610849f00b65b677c6636f7cbdacc4e284f1770ab2c61", size = 254180, upload-time = "2026-10-20T17:50:39.628Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b7/4d/d3d3cb1d4421cb7d733780d9dd183c14305c6aa81708192e375c62f87700/aind_video_utils-0.12.0.tar.gz", hash = "sha256:31d7f8b7ee5d453d094da48fb7d996c44f70707361bef58e54a7f0215d686327", size = 260386, upload-time = "2026-11-19T16:50:44.431Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/a4/d70c2f78759328cab7b3d81cb89605ddd35af1d4afc5db3acd9345d7afb3/aind_video_utils-0.9.0-py3-none-any.whl", hash = "sha256:d6de577366660e92a559abde647453aaf939ea918d64e616e2fd0f7b11bcac08", size = 72412, upload-time = "2026-10-20T17:50:38.586Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/44/b29cb93400f212889491b0a79b9a4a4472c1e1779a0267ac1135afa50760/aind_video_utils-0.12.0-py3-none-any.whl", hash = "sha256:b43cfe2db6ea03742f977a9e0a1226bc85d313e0d4715bfa132edd0b307a0f58", size = 88303, upload-time = "2026-11-19T16:50:43.196Z" },
 ]
 
 [package.optional-dependencies]
